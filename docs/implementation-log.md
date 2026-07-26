@@ -39,6 +39,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Evidence: The route test was RED on the missing research route, then passed 4 behavior cases for constrained mounting-spec search, title/URL validation, canonical deduplication, five-source bounding, missing configuration, and redacted timeout failure. `npm run typecheck` exited 0.
 - Carry-forward rule: Exa 2.16 retains `searchAndContents` as a deprecated compatibility wrapper; it accepts the requested `{ type: "auto", numResults: 5, text: { maxCharacters } }` call shape. Keep results as evidence only; no Exa output may modify CAD geometry.
 
+### 2026-07-26 — Task 8 Fix Round 1: constrained Exa query composition
+
+- Branch/commit: `agent/patchcad-providers` after `714cc08`
+- Attempt: Prevent unrelated user research text from reaching Exa as the complete search query while preserving a single provider call and bounded growth.
+- Result: worked
+- Evidence: The adapter-boundary assertion was RED with the raw `M4 mounting bracket` query, then GREEN with an exact fixed composition that isolates the phrase as data and focuses retrieval on mounting-hole dimensions, bolt pattern, units, datasheets, and mechanical drawings. The focused suite passed 4 tests and type checking exited 0.
+- Carry-forward rule: Compose provider research queries from a fixed domain frame plus the bounded user phrase exactly once; treat user text as isolated search data, never as provider instructions.
+
 ### 2026-07-26 — Honest offline patch parser
 
 - Branch/commit: `agent/patchcad-foundation` Task 4 worktree

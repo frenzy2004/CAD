@@ -16,3 +16,16 @@ Implemented a server-only Exa research route that produces at most five normaliz
 ## SDK discovery
 
 The installed Exa 2.16 package still provides `searchAndContents` (as a deprecated compatibility wrapper), including the legacy `type`, `numResults`, and `text` option shape required for this task.
+
+## Fix Round 1
+
+The adapter-boundary regression was RED because the service sent the unrelated user phrase `M4 mounting bracket` directly to Exa. The service now makes the single `searchAndContents` call with one fixed evidence-seeking query that:
+
+- frames the original phrase once inside an explicit data-only boundary;
+- requests mechanical mounting-hole dimensions, bolt pattern, stated units, and manufacturer datasheets or drawings;
+- adds only a fixed prefix and suffix to the existing bounded request phrase.
+
+Fresh verification:
+
+- `npm test -- tests/integration/api-research.test.ts` — 4 passed
+- `npm run typecheck` — passed

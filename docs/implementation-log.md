@@ -15,6 +15,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Playwright browser runtime
+
+- Branch/commit: integration verification environment
+- Attempt: Check for and preinstall the lockfile-matched Playwright Chromium runtime before the real CAD/WASM end-to-end gate.
+- Result: worked
+- Evidence: `npx playwright install --dry-run chromium` identified missing Chromium build 1234, FFmpeg 1011, and its headless shell. The approved `npx playwright install chromium` downloaded all three successfully to Playwright's user cache.
+- Carry-forward rule: Reuse Playwright Chromium build 1234 for Task 12; do not repeat the ~275 MiB browser download unless the pinned Playwright version changes.
+
 ### 2026-07-26 — Research route actual-byte bound
 
 - Branch/commit: `agent/patchcad-integration` provider hardening

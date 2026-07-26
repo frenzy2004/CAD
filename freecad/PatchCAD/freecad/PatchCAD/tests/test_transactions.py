@@ -1,6 +1,11 @@
+import hashlib
+import json
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
+from freecad.PatchCAD import service
+from freecad.PatchCAD.protocol import PatchRequest, ProtocolError
 from freecad.PatchCAD.service import PatchService, PatchServiceError
 
 
@@ -20,6 +25,7 @@ class PatchObject:
     def __init__(self):
         self.PatchId = "patch-1"
         self.RequestId = "request-1"
+        self.RequestFingerprint = ""
         self.AuditId = "audit-1"
         self.Name = "PatchCADPatch"
         self.Operation = "resize_hole"
@@ -37,6 +43,7 @@ class TransactionDocument:
 
     def __init__(self, patch):
         self.patch = patch
+        self.Objects = [patch]
         self.recompute_behavior = lambda: 1
         self.commits = 0
         self.aborts = 0
@@ -118,6 +125,52 @@ class MutationRecomputeTests(unittest.TestCase):
         self.assertEqual(result["diameter_mm"], 12.0)
         self.assertEqual(patch.Document.commits, 1)
         self.assertEqual(patch.Document.aborts, 0)
+
+
+class PersistedIdempotencyTests(unittest.TestCase):
+    @staticmethod
+    def fingerprint(request):
+        canonical = {
+            "request_id": request.request_id,
+            "document": request.document,
+            "object_name": request.object_name,
+            "subelement": request.subelement,
+            "operation": request.operation,
+            "diameter_mm": request.diameter_mm,
+            "point": list(request.point) if request.point is not None else None,
+            "through_all": request.through_all,
+            "units": "mm",
+        }
+        encoded = json.dumps(
+            canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def test_existing_request_id_with_different_semantic_payload_is_rejected(self):
+        original = PatchRequest(
+            request_id="request-1",
+            document="Bracket",
+            object_name="Body",
+            subelement="Face4",
+            operation="resize_hole",
+            diameter_mm=6.0,
+        )
+        changed = PatchRequest(
+            request_id="request-1",
+            document="Bracket",
+            object_name="Body",
+            subelement="Face4",
+            operation="resize_hole",
+            diameter_mm=8.0,
+        )
+        patch = PatchObject()
+        patch.RequestFingerprint = self.fingerprint(original)
+        target = SimpleNamespace(source=patch.Document)
+        target.source = SimpleNamespace(Document=patch.Document)
+
+        with mock.patch.object(service, "_app", return_value=SimpleNamespace()):
+            with self.assertRaisesRegex(ProtocolError, "different payload"):
+                PatchService().create_patch(changed, target)
 
 
 if __name__ == "__main__":

@@ -153,6 +153,86 @@ class RunningBridgeTests(unittest.TestCase):
         self.assertEqual(second[2], first[2])
         self.assertEqual(len(self.dispatcher.calls), 1)
 
+    def test_semantically_equivalent_payload_replays_despite_json_default_spelling(self):
+        explicit = {
+            "request_id": "req-semantic",
+            "document": "Bracket",
+            "object_name": "Body",
+            "subelement": "Face4",
+            "operation": "resize_hole",
+            "diameter_mm": 8.0,
+            "point": None,
+            "through_all": True,
+            "units": "mm",
+        }
+        implicit = {
+            "units": "mm",
+            "diameter_mm": 8,
+            "operation": "resize_hole",
+            "subelement": "Face4",
+            "object_name": "Body",
+            "document": "Bracket",
+            "request_id": "req-semantic",
+        }
+        self.dispatcher.result = {"patch_id": "patch-semantic"}
+
+        first = self.request(
+            "POST", "/patches", body=explicit, headers=self.auth_headers(Origin=self.origin)
+        )
+        second = self.request(
+            "POST", "/patches", body=implicit, headers=self.auth_headers(Origin=self.origin)
+        )
+
+        self.assertEqual(first[0], 201)
+        self.assertEqual(second[0], 200)
+        self.assertEqual(second[2], first[2])
+        self.assertEqual(len(self.dispatcher.calls), 1)
+
+    def test_request_id_payload_conflict_returns_conflict(self):
+        payload = {
+            "request_id": "req-conflict",
+            "object_name": "Body",
+            "subelement": "Face4",
+            "operation": "resize_hole",
+            "diameter_mm": 8,
+            "units": "mm",
+        }
+        self.dispatcher.result = {"patch_id": "patch-conflict"}
+
+        first = self.request(
+            "POST", "/patches", body=payload, headers=self.auth_headers(Origin=self.origin)
+        )
+        payload["diameter_mm"] = 9
+        second = self.request(
+            "POST", "/patches", body=payload, headers=self.auth_headers(Origin=self.origin)
+        )
+
+        self.assertEqual(first[0], 201)
+        self.assertEqual(second[0], 409)
+        self.assertEqual(second[2]["error"]["code"], "IDEMPOTENCY_CONFLICT")
+        self.assertEqual(len(self.dispatcher.calls), 1)
+
+    def test_persisted_idempotent_result_uses_replay_status_after_restart(self):
+        payload = {
+            "request_id": "req-persisted",
+            "object_name": "Body",
+            "subelement": "Face4",
+            "operation": "resize_hole",
+            "diameter_mm": 8,
+            "units": "mm",
+        }
+        self.dispatcher.result = {
+            "patch_id": "patch-persisted",
+            "idempotent": True,
+        }
+
+        status, _, body = self.request(
+            "POST", "/patches", body=payload, headers=self.auth_headers(Origin=self.origin)
+        )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(body["idempotent"])
+
     def test_mutation_routes_dispatch_named_gui_work(self):
         cases = [
             ("PATCH", "/patches/patch-7/diameter", {"diameter_mm": 9, "units": "mm"}, "update_diameter"),

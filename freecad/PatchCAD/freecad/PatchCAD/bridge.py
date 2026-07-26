@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import hashlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -15,7 +14,13 @@ import threading
 from typing import Callable, Literal, Mapping, Protocol
 from urllib.parse import unquote, urlsplit
 
-from .protocol import ProtocolError, RequestIdCache, parse_patch_request
+from .protocol import (
+    IdempotencyConflict,
+    ProtocolError,
+    RequestIdCache,
+    parse_patch_request,
+    patch_request_fingerprint,
+)
 
 
 DEFAULT_MAX_BODY_BYTES = 64 * 1024
@@ -121,10 +126,7 @@ class BridgeApplication:
 
     def create_patch(self, raw_body: bytes) -> tuple[object, bool]:
         request = parse_patch_request(raw_body)
-        canonical = json.dumps(
-            json.loads(raw_body), sort_keys=True, separators=(",", ":"), ensure_ascii=False
-        ).encode("utf-8")
-        fingerprint = hashlib.sha256(canonical).hexdigest()
+        fingerprint = patch_request_fingerprint(request)
         created = False
 
         def apply() -> object:
@@ -135,6 +137,8 @@ class BridgeApplication:
         result = self.request_cache.run(
             request.request_id, apply, fingerprint=fingerprint
         )
+        if isinstance(result, Mapping) and result.get("idempotent") is True:
+            created = False
         return result, created
 
 
@@ -309,6 +313,12 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
                     self._json(HTTPStatus.OK, self.app.dispatch("set_enabled", payload))
                 return
             self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "endpoint not found")
+        except IdempotencyConflict as exc:
+            self._error(
+                HTTPStatus.CONFLICT,
+                "IDEMPOTENCY_CONFLICT",
+                str(exc),
+            )
         except ProtocolError as exc:
             self._error(HTTPStatus.BAD_REQUEST, "INVALID_REQUEST", str(exc))
         except _BodyTooLarge:

@@ -9,7 +9,7 @@ import uuid
 
 from .audit import AuditWriteError, write_audit_entry
 from .feature import attach_patch_feature, valid_one_solid
-from .protocol import PatchRequest
+from .protocol import IdempotencyConflict, PatchRequest, patch_request_fingerprint
 from .selection import (
     SelectionTarget,
     current_selection_payload,
@@ -91,8 +91,13 @@ class PatchService:
         app = _app()
         target = target or resolve_request(request)
         document = target.source.Document
+        request_fingerprint = patch_request_fingerprint(request)
         existing = _find_patch(document, "RequestId", request.request_id)
         if existing is not None:
+            if getattr(existing, "RequestFingerprint", "") != request_fingerprint:
+                raise IdempotencyConflict(
+                    "request_id was already used with a different payload"
+                )
             response = _patch_response(existing, idempotent=True)
             response["audit_error"] = None
             return response
@@ -112,6 +117,7 @@ class PatchService:
                 diameter_mm=request.diameter_mm,
                 patch_id=patch_id,
                 request_id=request.request_id,
+                request_fingerprint=request_fingerprint,
                 audit_id=audit_id,
             )
             _recompute_fresh(document, patch, 0)

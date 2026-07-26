@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 import math
 import re
@@ -35,6 +36,10 @@ class ProtocolError(ValueError):
     """A request is not part of the PatchCAD wire contract."""
 
 
+class IdempotencyConflict(ProtocolError):
+    """A request ID is already bound to a different semantic payload."""
+
+
 @dataclass(frozen=True)
 class PatchRequest:
     request_id: str
@@ -45,6 +50,26 @@ class PatchRequest:
     diameter_mm: float
     point: tuple[float, float, float] | None = None
     through_all: bool = True
+
+
+def patch_request_fingerprint(request: PatchRequest) -> str:
+    """Hash the normalized semantic request, independent of JSON spelling."""
+
+    canonical = {
+        "request_id": request.request_id,
+        "document": request.document,
+        "object_name": request.object_name,
+        "subelement": request.subelement,
+        "operation": request.operation,
+        "diameter_mm": request.diameter_mm,
+        "point": list(request.point) if request.point is not None else None,
+        "through_all": request.through_all,
+        "units": "mm",
+    }
+    encoded = json.dumps(
+        canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _json_object(value: bytes | str | Mapping[str, object]) -> dict[str, object]:
@@ -158,7 +183,9 @@ class RequestIdCache:
                     and cached_fingerprint is not None
                     and fingerprint != cached_fingerprint
                 ):
-                    raise ProtocolError("request_id was already used with a different payload")
+                    raise IdempotencyConflict(
+                        "request_id was already used with a different payload"
+                    )
                 return result  # type: ignore[return-value]
 
             result = operation()

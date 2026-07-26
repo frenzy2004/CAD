@@ -87,6 +87,7 @@ def attach_patch_feature(
     diameter_mm: float,
     patch_id: str,
     request_id: str,
+    request_fingerprint: str,
     audit_id: str,
 ) -> None:
     app, _ = _modules()
@@ -105,6 +106,7 @@ def attach_patch_feature(
     obj.addProperty("App::PropertyBool", "Enabled", group)  # type: ignore[attr-defined]
     obj.addProperty("App::PropertyString", "PatchId", group)  # type: ignore[attr-defined]
     obj.addProperty("App::PropertyString", "RequestId", group)  # type: ignore[attr-defined]
+    obj.addProperty("App::PropertyString", "RequestFingerprint", group)  # type: ignore[attr-defined]
     obj.addProperty("App::PropertyString", "AuditId", group)  # type: ignore[attr-defined]
     obj.addProperty("App::PropertyInteger", "SchemaVersion", group)  # type: ignore[attr-defined]
 
@@ -123,6 +125,7 @@ def attach_patch_feature(
     obj.Enabled = True  # type: ignore[attr-defined]
     obj.PatchId = patch_id  # type: ignore[attr-defined]
     obj.RequestId = request_id  # type: ignore[attr-defined]
+    obj.RequestFingerprint = request_fingerprint  # type: ignore[attr-defined]
     obj.AuditId = audit_id  # type: ignore[attr-defined]
     obj.SchemaVersion = SCHEMA_VERSION  # type: ignore[attr-defined]
     PatchFeature(obj)

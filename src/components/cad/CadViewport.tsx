@@ -12,7 +12,7 @@ import { MagicCircleOverlay } from "./MagicCircleOverlay";
 import { Scene, type OrbitControlsState } from "./Scene";
 
 const INITIAL_STATUS =
-  "Draw a circle around a hole to select it. Hold Alt while dragging to orbit.";
+  "Draw a circle around a hole, or use arrow keys and Enter. Hold Alt while dragging to orbit.";
 const NO_PROJECTED_ANCHORS: readonly ProjectedFeatureAnchor[] = [];
 
 type ProjectionState = {
@@ -28,6 +28,11 @@ type SelectionState = {
 type DrawingState = {
   meshRevision: number;
   drawing: boolean;
+};
+
+type KeyboardTargetState = {
+  meshRevision: number;
+  featureId: string;
 };
 
 type MeshRevisionState = {
@@ -49,12 +54,14 @@ function pointsMatch(
 export interface CadViewportProps {
   mesh: CadMesh;
   className?: string;
+  preserveSelectionFeatureId?: string | null;
   onSelectionChange(selection: SelectionEnvelope | null): void;
 }
 
 export function CadViewport({
   mesh,
   className,
+  preserveSelectionFeatureId = null,
   onSelectionChange,
 }: CadViewportProps) {
   const controls = useRef<OrbitControlsState | null>(null);
@@ -81,10 +88,22 @@ export function CadViewport({
     useState<ProjectionState | null>(null);
   const [selectionState, setSelectionState] =
     useState<SelectionState | null>(null);
+  const [keyboardTargetState, setKeyboardTargetState] =
+    useState<KeyboardTargetState | null>(null);
   const [statusText, setStatusText] = useState(INITIAL_STATUS);
+  const preservedSelectionAnchor =
+    selectionState !== null &&
+    selectionState.meshRevision !== meshRevision &&
+    selectionState.featureId === preserveSelectionFeatureId
+      ? mesh.holeAnchors.find(
+          (anchor) => anchor.featureId === selectionState.featureId,
+        )
+      : undefined;
+  const selectionCanPersist = preservedSelectionAnchor !== undefined;
   const selectionIsStale =
     selectionState !== null &&
-    selectionState.meshRevision !== meshRevision;
+    selectionState.meshRevision !== meshRevision &&
+    !selectionCanPersist;
   const drawing =
     drawingState.meshRevision === meshRevision &&
     drawingState.drawing;
@@ -99,6 +118,12 @@ export function CadViewport({
       (anchor) => anchor.featureId === selectionState.featureId,
     )
       ? selectionState.featureId
+      : keyboardTargetState?.meshRevision === meshRevision &&
+          mesh.holeAnchors.some(
+            (anchor) =>
+              anchor.featureId === keyboardTargetState.featureId,
+          )
+        ? keyboardTargetState.featureId
       : null;
 
   const handleProjectedAnchorsChange = useCallback(
@@ -186,6 +211,61 @@ export function CadViewport({
     [mesh, meshRevision, onSelectionChange],
   );
 
+  const handleKeyboardCommand = useCallback(
+    (command: "next" | "previous" | "select") => {
+      const anchors = mesh.holeAnchors;
+      const currentFeatureId =
+        keyboardTargetState?.meshRevision === meshRevision
+          ? keyboardTargetState.featureId
+          : null;
+      const currentIndex = anchors.findIndex(
+        (anchor) => anchor.featureId === currentFeatureId,
+      );
+
+      if (command === "select") {
+        if (currentIndex < 0) {
+          setStatusText(
+            "Use an arrow key to choose an editable hole, then press Enter.",
+          );
+          return;
+        }
+        const anchor = anchors[currentIndex];
+        handleSelection({
+          ...anchor,
+          screenPoint: { x: 0, y: 0 },
+        });
+        return;
+      }
+
+      if (anchors.length === 0) {
+        setStatusText("This model has no keyboard-editable hole anchors.");
+        return;
+      }
+
+      const offset = command === "next" ? 1 : -1;
+      const nextIndex =
+        currentIndex < 0
+          ? command === "next"
+            ? 0
+            : anchors.length - 1
+          : (currentIndex + offset + anchors.length) % anchors.length;
+      const nextAnchor = anchors[nextIndex];
+      setKeyboardTargetState({
+        meshRevision,
+        featureId: nextAnchor.featureId,
+      });
+      setStatusText(
+        `Keyboard target ${nextAnchor.featureId}, diameter ${nextAnchor.diameterMm} mm. Press Enter to select.`,
+      );
+    },
+    [
+      handleSelection,
+      keyboardTargetState,
+      mesh.holeAnchors,
+      meshRevision,
+    ],
+  );
+
   useEffect(() => {
     if (selectionIsStale) onSelectionChange(null);
   }, [
@@ -204,11 +284,14 @@ export function CadViewport({
       <MagicCircleOverlay
         key={meshRevision}
         onDrawingChange={handleDrawingChange}
+        onKeyboardCommand={handleKeyboardCommand}
         onSelect={handleSelection}
         projectedAnchors={projectedAnchors}
         statusText={
           selectionIsStale
             ? "The model changed. Draw a new circle to select an editable hole."
+            : preservedSelectionAnchor !== undefined
+              ? `Selected ${preservedSelectionAnchor.featureId}, diameter ${preservedSelectionAnchor.diameterMm} mm`
             : statusText
         }
       >

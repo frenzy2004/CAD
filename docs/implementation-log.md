@@ -15,6 +15,22 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 20:09 — Workspace independent-review hardening
+
+- Branch/commit: `agent/patchcad-workspace` PR review fix
+- Attempt: Reproduce and close the real-viewport selection, stale-plan, async race, keyboard accessibility, research invalidation, and worker-status findings without weakening exact-geometry boundaries.
+- Result: worked
+- Evidence: Regressions were RED for missing keyboard selection, preview mesh revision clearing the selection, instruction edits retaining an applicable stale plan, a pending 9 mm rebuild overwriting a newer blank value, stale research appearing after JSON body parsing, and an errored worker still announcing `Exact kernel ready`. The non-configuration provider-error test passed immediately and proved there was no offline fallback. After the fixes, all focused regressions passed; the full web suite passed 18 files and 122 tests, warning-free lint and typecheck passed, and the production build emitted all routes. Reject and Reset restoration also have workflow coverage.
+- Carry-forward rule: Preserve semantic selection across explicitly authorized workspace mesh revisions only; every user edit must invalidate older async work before validation or body parsing completes, and kernel accessibility text must derive from worker status rather than retained mesh availability.
+
+### 2026-07-26 20:09 — FreeCAD test script points to an unmerged package
+
+- Branch/commit: `agent/patchcad-workspace` PR review verification
+- Attempt: Run the repository `npm run test:freecad` gate after the workspace fixes.
+- Result: failed
+- Evidence: Python exited before collecting tests with `Start directory is not importable: 'freecad/PatchCAD/freecad/PatchCAD/tests'`; this branch contains only `freecad/README.md`, while the FreeCAD package remains on its separate implementation branch.
+- Carry-forward rule: Do not report FreeCAD tests as executed on a branch that does not contain the package. Merge the reviewed FreeCAD branch before making this script a required combined-branch gate.
+
 ### 2026-07-26 19:44 — Verified STEP and audit workspace exports
 
 - Branch/commit: `agent/patchcad-workspace` Task 10

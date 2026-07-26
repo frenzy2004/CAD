@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -36,27 +37,29 @@ function meshFor(snapshot: BracketSnapshot): CadMesh {
   };
 }
 
-const workerRequest = vi.fn(
-  async (command: CadWorkerCommand): Promise<CadWorkerReply> => {
-    if (command.type === "export-step") {
-      return {
-        id: crypto.randomUUID(),
-        type: "step",
-        filename: "patchcad-bracket.step",
-        bytes: new Uint8Array([1, 2, 3, 4]).buffer,
-      };
-    }
-    if (command.type === "build") {
-      return {
-        id: crypto.randomUUID(),
-        type: "mesh",
-        mesh: meshFor(command.snapshot),
-      };
-    }
+async function defaultWorkerRequest(
+  command: CadWorkerCommand,
+): Promise<CadWorkerReply> {
+  if (command.type === "export-step") {
+    return {
+      id: crypto.randomUUID(),
+      type: "step",
+      filename: "patchcad-bracket.step",
+      bytes: new Uint8Array([1, 2, 3, 4]).buffer,
+    };
+  }
+  if (command.type === "build") {
+    return {
+      id: crypto.randomUUID(),
+      type: "mesh",
+      mesh: meshFor(command.snapshot),
+    };
+  }
 
-    throw new Error(`Unexpected worker command: ${command.type}`);
-  },
-);
+  throw new Error(`Unexpected worker command: ${command.type}`);
+}
+
+const workerRequest = vi.fn(defaultWorkerRequest);
 const workerInitialize = vi.fn(async () => undefined);
 const workerTerminate = vi.fn();
 
@@ -108,6 +111,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   workerRequest.mockClear();
+  workerRequest.mockImplementation(defaultWorkerRequest);
   workerInitialize.mockClear();
   workerTerminate.mockClear();
 });
@@ -256,5 +260,198 @@ describe("PatchCAD workspace", () => {
       type: "application/json",
     });
     expect(revokeObjectURL).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidates a verified preview when its visible instruction changes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/plan") {
+          return Response.json(
+            { error: { code: "AI_NOT_CONFIGURED" } },
+            { status: 503 },
+          );
+        }
+        return Response.json(
+          { error: { code: "RESEARCH_NOT_CONFIGURED" } },
+          { status: 503 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<PatchWorkspace initialSnapshot={createDemoBracket()} />);
+    await screen.findByText("Exact kernel ready", { exact: false });
+    await user.click(screen.getByRole("button", { name: "Select hole:nw" }));
+    const instruction = screen.getByRole("textbox", {
+      name: "Patch instruction",
+    });
+    await user.type(instruction, "make this hole 8 mm");
+    await user.click(
+      screen.getByRole("button", { name: "Preview patch" }),
+    );
+    await screen.findByText("1 changed feature");
+    expect(
+      screen.getByRole("button", { name: "Apply verified patch" }),
+    ).toBeEnabled();
+
+    await user.clear(instruction);
+    await user.type(instruction, "make this hole 9 mm");
+
+    expect(screen.getByText("Not planned")).toBeInTheDocument();
+    expect(screen.queryByText("1 changed feature")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Apply verified patch" }),
+    ).toBeDisabled();
+  });
+
+  it("does not let a pending valid diameter rebuild overwrite a newer invalid value", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/plan") {
+          return Response.json(
+            { error: { code: "AI_NOT_CONFIGURED" } },
+            { status: 503 },
+          );
+        }
+        return Response.json(
+          { error: { code: "RESEARCH_NOT_CONFIGURED" } },
+          { status: 503 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<PatchWorkspace initialSnapshot={createDemoBracket()} />);
+    await screen.findByText("Exact kernel ready", { exact: false });
+    await user.click(screen.getByRole("button", { name: "Select hole:nw" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Patch instruction" }),
+      "make this hole 8 mm",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Preview patch" }),
+    );
+    await screen.findByText("1 changed feature");
+
+    let resolvePendingBuild:
+      | ((reply: CadWorkerReply) => void)
+      | undefined;
+    const pendingBuild = new Promise<CadWorkerReply>((resolve) => {
+      resolvePendingBuild = resolve;
+    });
+    workerRequest.mockImplementation((command) => {
+      if (
+        command.type === "build" &&
+        command.snapshot.holes.some(
+          (hole) => hole.id === "hole:nw" && hole.diameterMm === 9,
+        )
+      ) {
+        return pendingBuild;
+      }
+      return defaultWorkerRequest(command);
+    });
+
+    const proposedDiameter = screen.getByRole("spinbutton", {
+      name: "Proposed diameter",
+    });
+    await user.clear(proposedDiameter);
+    await user.type(proposedDiameter, "9");
+    await user.clear(proposedDiameter);
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Enter a valid diameter");
+
+    await act(async () => {
+      resolvePendingBuild?.({
+        id: crypto.randomUUID(),
+        type: "mesh",
+        mesh: meshFor({
+          ...createDemoBracket(),
+          holes: createDemoBracket().holes.map((hole) =>
+            hole.id === "hole:nw"
+              ? { ...hole, diameterMm: 9 }
+              : hole,
+          ),
+        }),
+      });
+      await pendingBuild;
+    });
+
+    expect(proposedDiameter).toHaveValue(null);
+    expect(
+      screen.getByRole("button", { name: "Apply verified patch" }),
+    ).toBeDisabled();
+  });
+
+  it("restores the current exact shape on Reject and the sample state on Reset", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/plan") {
+          return Response.json(
+            { error: { code: "AI_NOT_CONFIGURED" } },
+            { status: 503 },
+          );
+        }
+        return Response.json(
+          { error: { code: "RESEARCH_NOT_CONFIGURED" } },
+          { status: 503 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+
+    render(<PatchWorkspace initialSnapshot={createDemoBracket()} />);
+    await screen.findByText("Exact kernel ready", { exact: false });
+    await user.click(screen.getByRole("button", { name: "Select hole:nw" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Patch instruction" }),
+      "make this hole 8 mm",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Preview patch" }),
+    );
+    await screen.findByText("1 changed feature");
+
+    await user.click(screen.getByRole("button", { name: "Reject patch" }));
+    await waitFor(() => {
+      expect(screen.getByText("Not planned")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Reject patch" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Apply verified patch" }),
+      ).toBeDisabled();
+      expect(screen.getByLabelText("Current diameter")).toHaveTextContent(
+        "6 mm",
+      );
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: "Preview patch" }),
+    );
+    await screen.findByText("1 changed feature");
+    await user.click(
+      screen.getByRole("button", { name: "Apply verified patch" }),
+    );
+    expect(screen.getByLabelText("Current diameter")).toHaveTextContent(
+      "8 mm",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Reset sample" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Undo patch" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Download STEP" }),
+      ).toBeDisabled();
+    });
+    await user.click(screen.getByRole("button", { name: "Select hole:nw" }));
+    expect(screen.getByLabelText("Current diameter")).toHaveTextContent(
+      "6 mm",
+    );
   });
 });

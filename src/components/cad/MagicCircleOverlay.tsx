@@ -31,6 +31,7 @@ export interface MagicCircleOverlayProps {
   projectedAnchors: readonly ProjectedFeatureAnchor[];
   statusText: string;
   onDrawingChange(drawing: boolean): void;
+  onKeyboardCommand(command: "next" | "previous" | "select"): void;
   onSelect(anchor: ProjectedFeatureAnchor | null): void;
 }
 
@@ -39,6 +40,7 @@ export function MagicCircleOverlay({
   projectedAnchors,
   statusText,
   onDrawingChange,
+  onKeyboardCommand,
   onSelect,
 }: MagicCircleOverlayProps) {
   const interactionSurface = useRef<HTMLDivElement>(null);
@@ -159,12 +161,34 @@ export function MagicCircleOverlay({
 
   return (
     <div
-      aria-label="Magic Circle CAD selection. Drag to select a hole; hold Alt while dragging to orbit."
+      aria-label="Magic Circle CAD selection. Drag to select a hole, or use arrow keys and Enter; hold Alt while dragging to orbit."
       className="relative h-full w-full touch-none overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-inset"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
           cancel();
+          return;
+        }
+        if (event.target !== event.currentTarget) return;
+        if (
+          event.key === "ArrowRight" ||
+          event.key === "ArrowDown"
+        ) {
+          event.preventDefault();
+          onKeyboardCommand("next");
+          return;
+        }
+        if (
+          event.key === "ArrowLeft" ||
+          event.key === "ArrowUp"
+        ) {
+          event.preventDefault();
+          onKeyboardCommand("previous");
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          onKeyboardCommand("select");
         }
       }}
       onLostPointerCapture={handleLostPointerCapture}

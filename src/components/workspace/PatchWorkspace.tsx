@@ -27,10 +27,17 @@ export function PatchWorkspace({
   initialSnapshot = DEFAULT_BRACKET,
 }: PatchWorkspaceProps) {
   const workspace = usePatchWorkspace(initialSnapshot);
-  const kernelReady = workspace.currentMesh !== null;
-  const kernelLabel = kernelReady
-    ? "Exact kernel ready"
-    : workspace.workerProgress ?? "Starting exact kernel";
+  const kernelFailed =
+    workspace.workerStatus === "error" || workspace.workerError !== null;
+  const kernelReady =
+    workspace.currentMesh !== null &&
+    workspace.workerStatus === "ready" &&
+    !kernelFailed;
+  const kernelLabel = kernelFailed
+    ? workspace.workerError ?? "Exact kernel error"
+    : kernelReady
+      ? "Exact kernel ready"
+      : workspace.workerProgress ?? "Starting exact kernel";
 
   return (
     <main className="min-h-screen bg-stone-950 text-stone-100">
@@ -54,7 +61,7 @@ export function PatchWorkspace({
 
         <StatusBadge
           tone={
-            workspace.phase === "error"
+            kernelFailed
               ? "danger"
               : kernelReady
                 ? "success"
@@ -126,6 +133,11 @@ export function PatchWorkspace({
               className="relative h-full min-h-[24rem] rounded-lg border-stone-800 bg-[#0d0c0b]"
               mesh={workspace.displayedMesh}
               onSelectionChange={workspace.setSelection}
+              preserveSelectionFeatureId={
+                workspace.selection?.editableFeatureIds.length === 1
+                  ? workspace.selection.editableFeatureIds[0]
+                  : null
+              }
             />
           ) : (
             <div

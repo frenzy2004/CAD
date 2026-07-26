@@ -196,11 +196,24 @@ function workspaceReducer(
         selection: action.selection,
       };
     }
-    case "INSTRUCTION_CHANGED":
+    case "INSTRUCTION_CHANGED": {
+      const invalidatesPendingPlan =
+        state.phase === "planning" ||
+        state.phase === "previewing" ||
+        (state.phase === "error" && state.plan !== null);
+      if (!invalidatesPendingPlan) {
+        return {
+          ...state,
+          instruction: action.instruction,
+        };
+      }
+      const cleared = clearPreview(state);
       return {
-        ...state,
+        ...cleared,
+        phase: state.selection ? "selected" : "ready",
         instruction: action.instruction,
       };
+    }
     case "PLANNING_STARTED":
       return {
         ...state,
@@ -419,6 +432,8 @@ export function usePatchWorkspace(
   }, []);
 
   const setInstruction = useCallback((instruction: string) => {
+    operationToken.current += 1;
+    researchToken.current += 1;
     dispatch({ type: "INSTRUCTION_CHANGED", instruction });
   }, []);
 
@@ -434,6 +449,7 @@ export function usePatchWorkspace(
       if (token !== researchToken.current) return;
       if (!response.ok) {
         const code = await readPublicErrorCode(response);
+        if (token !== researchToken.current) return;
         dispatch({
           type:
             code === "RESEARCH_NOT_CONFIGURED"
@@ -443,7 +459,9 @@ export function usePatchWorkspace(
         return;
       }
 
-      const parsed = ResearchResponseSchema.safeParse(await response.json());
+      const body: unknown = await response.json();
+      if (token !== researchToken.current) return;
+      const parsed = ResearchResponseSchema.safeParse(body);
       dispatch(
         parsed.success
           ? { type: "RESEARCH_READY", sources: parsed.data.sources }
@@ -570,6 +588,7 @@ export function usePatchWorkspace(
 
   const adjustProposedDiameter = useCallback(
     async (value: string) => {
+      const token = ++operationToken.current;
       dispatch({ type: "PROPOSED_DIAMETER_CHANGED", value });
       if (!state.plan || !state.planSource) return;
 
@@ -586,7 +605,6 @@ export function usePatchWorkspace(
         return;
       }
 
-      const token = ++operationToken.current;
       try {
         await previewPlan(parsedPlan.data, state.planSource, token);
       } catch (error) {

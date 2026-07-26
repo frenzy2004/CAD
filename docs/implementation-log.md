@@ -15,6 +15,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Parallel Next build lock collision
+
+- Branch/commit: `agent/patchcad-providers` verification gate
+- Attempt: Start a second production build while an independent reviewer was already building the same worktree.
+- Result: failed, then worked
+- Evidence: The second `npm run build` exited immediately with `Another next build process is already running`. The existing build completed and released `.next/lock`; an unchanged retry then compiled, type-checked, generated all pages, and emitted both provider routes successfully.
+- Carry-forward rule: Never run concurrent Next production builds in one worktree. Parallelize builds across isolated worktrees, or wait for the current worktree's `.next/lock` owner to finish before retrying.
+
 ### 2026-07-26 — Provider route integration build fix
 
 - Branch/commit: `agent/patchcad-providers` after `b4af09e`

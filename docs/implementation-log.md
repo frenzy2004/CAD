@@ -15,6 +15,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Artifact boundary review fix
+
+- Branch/commit: `agent/patchcad-integration` download review
+- Attempt: Close independent-review gaps in canonical hashing, fixed artifact extensions, and cleanup/audit assertions before workspace wiring.
+- Result: worked
+- Evidence: Two regressions were RED: duplicate semantic hole IDs were hashable in source order, and a runtime extension such as `.step/../../unsafe` was appended unsanitized. Hashing now rejects duplicate IDs and the public helper accepts only `.step` or `.json` at both type and runtime boundaries. Tests now also prove anchor removal after click failure and the exact top-level audit key set. All 12 focused tests, typecheck, and lint pass.
+- Carry-forward rule: Semantic hashes require unique IDs before sorting; never expose a “safe filename” helper with an unconstrained extension parameter, and assert exact audit surfaces rather than partial object matches.
+
 ### 2026-07-26 — Playwright browser runtime
 
 - Branch/commit: integration verification environment

@@ -15,6 +15,7 @@ export const STEP_MIME_TYPE = "model/step";
 export const JSON_MIME_TYPE = "application/json";
 
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
+const ARTIFACT_EXTENSIONS = new Set([".step", ".json"]);
 const PLAN_SOURCES = new Set<PatchAuditInput["planSource"]>([
   "openai",
   "local-parser",
@@ -62,8 +63,12 @@ export type PatchAudit = PatchAuditInput & {
 export function safeDownloadFilename(
   requestedName: string,
   fallbackStem: string,
-  extension: `.${string}`,
+  extension: ".step" | ".json",
 ): string {
+  if (!ARTIFACT_EXTENSIONS.has(extension)) {
+    throw new Error("PatchCAD download extension is unsupported.");
+  }
+
   const leaf = requestedName.trim().replaceAll("\\", "/").split("/").at(-1) ?? "";
   const withoutExtension = leaf.toLowerCase().endsWith(extension.toLowerCase())
     ? leaf.slice(0, -extension.length)
@@ -143,6 +148,10 @@ export async function hashBracketSnapshot(
   }
 
   const parsed = BracketSnapshotSchema.parse(snapshot);
+  const semanticIds = parsed.holes.map((hole) => hole.id);
+  if (new Set(semanticIds).size !== semanticIds.length) {
+    throw new Error("Bracket holes must have unique semantic IDs before hashing.");
+  }
   const canonical = {
     ...parsed,
     holes: [...parsed.holes].sort((left, right) =>

@@ -262,3 +262,29 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: worked
 - Evidence: `npm test -- tests/unit/schemas.test.ts` passed 11 tests, and `npm run typecheck` exited 0.
 - Carry-forward rule: Treat all untrusted CAD, plan, and research payloads as strict millimetre-only boundaries; use `PatchPlanSchema` as the only accepted executable intent and keep provider credentials out of every shared contract and response type.
+
+## Browser kernel workstream
+
+### 2026-07-26 — Exact OpenCascade browser worker
+
+- Branch/commit: `agent/patchcad-kernel` at `f5f6e33`
+- Attempt: Add a strict transferable worker protocol, a single-initialization Replicad/OpenCascade worker, exact bracket/STEP operations, imported-solid session holes rebuilt from an untouched B-rep, and lazy React lifecycle management.
+- Result: worked with browser-runtime verification carried forward
+- Evidence: The protocol suite was RED because `@/lib/cad/worker-protocol` did not exist, then GREEN with 7 tests covering UUID IDs, unknown/extra message rejection, finite typed geometry, triangle/index invariants, bounds, face groups, and bracket hole anchors. The final repository suite passed 46 tests; type checking and lint exited 0. `npm run build` emitted `.next/static/chunks/cad.worker.js`, the pinned 10 MB `public/cad-runtime/replicad_single-0.23.0.wasm`, and no CAD runtime signatures in `.next/server` JavaScript. A direct jsdom capability check reported `Worker: "undefined"` while `WebAssembly: "object"`, so Vitest cannot execute the real browser worker.
+- Carry-forward rule: Task 12 must exercise initialize, exact bracket build, STEP export/re-import, one-solid STEP import, planar session-hole add/resize, non-planar/pre-existing-hole rejection, and transferable mesh face groups in Playwright against the emitted worker and real pinned WASM. Do not add a fake production kernel or import Replicad/OCCT from any server graph.
+
+### 2026-07-26 — Browser kernel Fix Round 1
+
+- Branch/commit: `agent/patchcad-kernel` after `b572ab5`
+- Attempt: Close reviewed concurrency, lifecycle, correlation, mesh-range, and failed-import ownership gaps with independent RED/GREEN regressions.
+- Result: worked with real browser/WASM execution carried forward
+- Evidence: Face-group tests were RED with five malformed layouts accepted, dispatcher tests were RED because no runtime dispatcher existed, three hook lifecycle tests were RED with zero worker terminations, and ownership was RED on the missing guarded-transfer module. Each became GREEN after its minimal fix. Independent review then found commit-before-reply state mutations: synchronous prepare-before-adopt tests drove atomic build/import/session-cut meshes, and asynchronous tests drove atomic snapshot STEP export. Final re-review was CLEAN. Non-finite-normal and inverted-bounds fixtures were mutation-checked RED with their validators temporarily disabled, then restored GREEN. The final suite passed 65 tests across 7 files; typecheck, lint, and the worker-enabled production build exited 0. The emitted client worker retains the pinned WASM URL and strict error codes, while `.next/server` JavaScript has no CAD runtime signatures.
+- Carry-forward rule: Treat invalid replies, crashes, and timeouts as fatal worker generations; serialize every exact-kernel request; retain caller UUIDs for correlatable invalid requests; require face groups to cover the triangle stream exactly; delete unadopted OCCT resources on every failure. Task 12 must still run the real worker and WASM in Playwright rather than treating controlled jsdom lifecycle coverage as kernel execution.
+
+### 2026-07-26 — Magic Circle CAD selection
+
+- Branch/commit: `agent/patchcad-kernel` at `123d233` plus the reviewed lifecycle follow-up
+- Attempt: Render transferred worker geometry without copying its typed arrays, fit a Z-up Three.js scene, project semantic hole anchors into CSS pixels, and resolve a persistent pointer-captured SVG circle into one strict resize-hole selection envelope.
+- Result: worked with real-browser visual verification carried forward
+- Evidence: The projection suite was RED on the missing module, then GREEN with six pure tests for in-circle nearest selection, rejection, deterministic ties, client-to-canvas coordinates, and the 8 px minimum radius. Review regressions were RED for lost pointer capture and stale state after mesh replacement, then GREEN after deliberate-release tracking and mesh-revision invalidation. The final suite passed 74 tests across 10 files; typecheck, lint, the production build, and whitespace checks exited 0.
+- Carry-forward rule: Keep semantic selection independent of Three.js scene traversal; publish CSS-pixel anchors only when their projection changes; remount drawing state and invalidate external selections whenever the mesh generation changes. Task 12 must visually exercise fit-to-view, orbit/draw handoff, persistent SVG selection, Escape/capture-loss cancellation, and selected-hole highlighting in a real browser.

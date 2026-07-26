@@ -23,6 +23,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Evidence: The integration suite was RED on the missing route, then passed 9 behavior cases covering validated plans, malformed provider output, refusal, incomplete output, protected targets, missing configuration, malformed/oversized requests, and secret-free error envelopes. `npm run typecheck` exited 0.
 - Carry-forward rule: The installed OpenAI 6.49 SDK exposes parsed output at `response.output_parsed`; refusal must be detected from `message` output content with `type: "refusal"`, and every parsed plan must still pass `validatePlan`.
 
+### 2026-07-26 — Exa-grounded component research
+
+- Branch/commit: `agent/patchcad-providers` Task 8
+- Attempt: Add a server-only Exa adapter and a route that returns bounded, normalized web evidence only, with canonical URL deduplication and safe upstream error handling.
+- Result: worked
+- Evidence: The route test was RED on the missing research route, then passed 4 behavior cases for constrained mounting-spec search, title/URL validation, canonical deduplication, five-source bounding, missing configuration, and redacted timeout failure. `npm run typecheck` exited 0.
+- Carry-forward rule: Exa 2.16 retains `searchAndContents` as a deprecated compatibility wrapper; it accepts the requested `{ type: "auto", numResults: 5, text: { maxCharacters } }` call shape. Keep results as evidence only; no Exa output may modify CAD geometry.
+
 ### 2026-07-26 — Honest offline patch parser
 
 - Branch/commit: `agent/patchcad-foundation` Task 4 worktree

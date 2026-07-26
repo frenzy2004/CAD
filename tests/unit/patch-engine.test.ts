@@ -74,6 +74,23 @@ describe("deterministic PatchCAD patch engine", () => {
     });
   });
 
+  it("rejects a same-diameter resize as a structured no-effect plan", () => {
+    const input = {
+      before: createDemoBracket(),
+      selection: { ...topFaceSelection, editableFeatureIds: ["hole:nw"] },
+      plan: {
+        version: 1,
+        operation: "resize_hole" as const,
+        targetFeatureId: "hole:nw",
+        diameterMm: 6,
+        rationale: "Keep the current hole size.",
+      },
+    };
+
+    expect(validatePlan(input)).toEqual({ valid: false, code: "NO_EFFECT" });
+    expect(() => applyPatch(input)).toThrowError("NO_EFFECT");
+  });
+
   it("adds a deterministic new hole when only the top face is selected", () => {
     const before = createDemoBracket();
     const plan: PatchPlan = {
@@ -125,6 +142,22 @@ describe("deterministic PatchCAD patch engine", () => {
         centerMm: { x: 3.9, y: 32 },
         diameterMm: 4,
         rationale: "Add a close edge hole.",
+      },
+    });
+
+    expect(result).toEqual({ valid: false, code: "MINIMUM_WALL_VIOLATION" });
+  });
+
+  it("rejects a resize that would reduce its edge wall below 2 mm", () => {
+    const result = validatePlan({
+      before: createDemoBracket(),
+      selection: { ...topFaceSelection, editableFeatureIds: ["hole:nw"] },
+      plan: {
+        version: 1,
+        operation: "resize_hole",
+        targetFeatureId: "hole:nw",
+        diameterMm: 22,
+        rationale: "Increase clearance too far.",
       },
     });
 
@@ -209,13 +242,13 @@ describe("deterministic PatchCAD patch engine", () => {
     expect(report.violations).toContain("PROTECTED_FEATURE_CHANGED");
   });
 
-  it("accepts only protected coordinate changes within the 0.0001 mm contract tolerance", () => {
+  it("uses the exact 0.0001 mm boundary for protected coordinate changes", () => {
     const before = createDemoBracket();
     const withinTolerance: BracketSnapshot = {
       ...before,
       holes: before.holes.map((hole) =>
         hole.id === "hole:ne"
-          ? { ...hole, centerMm: { ...hole.centerMm, x: 88.00009 } }
+          ? { ...hole, centerMm: { ...hole.centerMm, x: 88.000099996 } }
           : hole,
       ),
     };
@@ -223,7 +256,7 @@ describe("deterministic PatchCAD patch engine", () => {
       ...before,
       holes: before.holes.map((hole) =>
         hole.id === "hole:ne"
-          ? { ...hole, centerMm: { ...hole.centerMm, x: 88.00011 } }
+          ? { ...hole, centerMm: { ...hole.centerMm, x: 88.000100004 } }
           : hole,
       ),
     };

@@ -13,6 +13,7 @@ export type PatchRejectionCode =
   | "MINIMUM_WALL_VIOLATION"
   | "HOLE_COLLISION"
   | "PROTECTED_FEATURE_CHANGED"
+  | "NO_EFFECT"
   | "UNSUPPORTED_OPERATION";
 
 export type VerificationViolationCode =
@@ -66,6 +67,10 @@ export function validatePlan(input: {
     const target = before.holes.find((hole) => hole.id === plan.targetFeatureId);
     if (!target) {
       return { valid: false, code: "TARGET_OUTSIDE_SELECTION" };
+    }
+
+    if (plan.diameterMm === target.diameterMm) {
+      return { valid: false, code: "NO_EFFECT" };
     }
 
     return validateCandidate(
@@ -134,10 +139,7 @@ export function applyPatch(input: {
 
   return {
     after,
-    report: {
-      ...localityReport,
-      targetChanged: true,
-    },
+    report: localityReport,
   };
 }
 
@@ -308,9 +310,5 @@ function fingerprintsMatch(
 }
 
 function equalWithinTolerance(left: number, right: number): boolean {
-  return Math.abs(roundForComparison(left - right)) <= CONTRACT.fingerprintToleranceMm;
-}
-
-function roundForComparison(value: number): number {
-  return Number(value.toFixed(8));
+  return Math.abs(left - right) <= CONTRACT.fingerprintToleranceMm;
 }

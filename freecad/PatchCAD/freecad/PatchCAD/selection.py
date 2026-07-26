@@ -84,6 +84,110 @@ def _validate_planar(face: object) -> tuple[float, float, float]:
     return _normalized(face.normalAt((u_min + u_max) / 2, (v_min + v_max) / 2))  # type: ignore[attr-defined]
 
 
+def _same_shape(left: object, right: object) -> bool:
+    is_same = getattr(left, "isSame", None)
+    if callable(is_same):
+        return bool(is_same(right))
+    return left is right
+
+
+def _validate_through_openings(
+    face: object,
+    source_shape: object,
+    vector_factory: Callable[[float, float, float], object],
+    *,
+    axis: tuple[float, float, float],
+    center: tuple[float, float, float],
+    radial: tuple[float, float, float],
+    radius: float,
+    lower: float,
+    upper: float,
+) -> None:
+    axial_span = upper - lower
+    boundary_tolerance = max(1e-5, axial_span * 1e-7)
+    endpoint_edges: list[object] = []
+    try:
+        edges = list(face.Edges)  # type: ignore[attr-defined]
+        for endpoint in (lower, upper):
+            matches = []
+            for edge in edges:
+                edge_center = _tuple(edge.CenterOfMass)  # type: ignore[attr-defined]
+                projection = sum(
+                    (edge_center[index] - center[index]) * axis[index]
+                    for index in range(3)
+                )
+                if math.isclose(
+                    projection,
+                    endpoint,
+                    rel_tol=0,
+                    abs_tol=boundary_tolerance,
+                ):
+                    matches.append(edge)
+            if len(matches) != 1:
+                raise SelectionError(
+                    "resize_hole could not prove two through-hole boundary loops"
+                )
+            endpoint_edges.append(matches[0])
+
+        for edge in endpoint_edges:
+            ancestors = list(source_shape.ancestorsOfType(edge, type(face)))
+            adjacent = [
+                ancestor
+                for ancestor in ancestors
+                if not _same_shape(ancestor, face)
+            ]
+            if len(adjacent) != 1 or "plane" not in _surface_kind(adjacent[0]):
+                raise SelectionError(
+                    "resize_hole requires planar openings at both through-hole ends"
+                )
+    except SelectionError:
+        raise
+    except Exception as exc:
+        raise SelectionError(
+            "resize_hole could not prove through-hole boundary connectivity"
+        ) from exc
+
+    radial_length = math.sqrt(sum(value * value for value in radial))
+    if not math.isclose(radial_length, radius, rel_tol=1e-7, abs_tol=1e-7):
+        raise SelectionError(
+            "resize_hole could not prove through-hole radial geometry"
+        )
+    radial_unit = tuple(value / radial_length for value in radial)
+    tangent_unit = (
+        axis[1] * radial_unit[2] - axis[2] * radial_unit[1],
+        axis[2] * radial_unit[0] - axis[0] * radial_unit[2],
+        axis[0] * radial_unit[1] - axis[1] * radial_unit[0],
+    )
+    opening_directions = (
+        (0.0, 0.0, 0.0),
+        radial_unit,
+        tuple(-value for value in radial_unit),
+        tangent_unit,
+        tuple(-value for value in tangent_unit),
+    )
+    probe_offset = max(1e-5, min(radius, axial_span) * 1e-6)
+    try:
+        for endpoint, outward in ((lower, -1.0), (upper, 1.0)):
+            for direction in opening_directions:
+                coordinates = tuple(
+                    center[index]
+                    + axis[index] * (endpoint + outward * probe_offset)
+                    + direction[index] * radius * 0.75
+                    for index in range(3)
+                )
+                probe = vector_factory(*coordinates)
+                if source_shape.isInside(probe, 1e-7, True):
+                    raise SelectionError(
+                        "resize_hole requires a through-hole open across both ends"
+                    )
+    except SelectionError:
+        raise
+    except Exception as exc:
+        raise SelectionError(
+            "resize_hole could not verify both through-hole openings"
+        ) from exc
+
+
 def _validate_inward_full_cylinder(
     face: object,
     source_shape: object | None = None,
@@ -127,28 +231,22 @@ def _validate_inward_full_cylinder(
         or vector_factory is None
         or len(list(getattr(source_shape, "Solids", ()))) != 1
         or not callable(getattr(source_shape, "isInside", None))
+        or not callable(getattr(source_shape, "ancestorsOfType", None))
     ):
         raise SelectionError("resize_hole requires a demonstrably open through-hole")
 
     lower, upper = sorted((float(v_min), float(v_max)))
-    probe_offset = max(1e-5, min(radius, axial_span) * 1e-6)
-    probe_parameters = (lower - probe_offset, upper + probe_offset)
-    try:
-        for parameter in probe_parameters:
-            coordinates = tuple(
-                center[index] + axis[index] * parameter for index in range(3)
-            )
-            probe = vector_factory(*coordinates)
-            if source_shape.isInside(probe, 1e-7, True):  # type: ignore[attr-defined]
-                raise SelectionError(
-                    "resize_hole requires a through-hole open at both axial ends"
-                )
-    except SelectionError:
-        raise
-    except Exception as exc:
-        raise SelectionError(
-            "resize_hole could not verify both through-hole openings"
-        ) from exc
+    _validate_through_openings(
+        face,
+        source_shape,
+        vector_factory,
+        axis=axis,
+        center=center,
+        radial=radial,
+        radius=radius,
+        lower=lower,
+        upper=upper,
+    )
     return axis, 2.0 * radius
 
 

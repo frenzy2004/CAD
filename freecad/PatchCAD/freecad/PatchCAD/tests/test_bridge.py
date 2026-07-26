@@ -4,8 +4,15 @@ import socket
 import threading
 import time
 import unittest
+from unittest import mock
 
-from freecad.PatchCAD.bridge import BridgeApplication, BridgeServer, GuiThreadDispatcher
+from freecad.PatchCAD import bridge
+from freecad.PatchCAD.bridge import (
+    BridgeApplication,
+    BridgeServer,
+    GuiThreadDispatcher,
+    _WorkItem,
+)
 
 
 class RecordingDispatcher:
@@ -147,6 +154,94 @@ class RunningBridgeTests(unittest.TestCase):
 
         self.assertEqual(status, 408)
         self.assertEqual(body["error"]["code"], "BODY_READ_TIMEOUT")
+        self.assertEqual(self.dispatcher.calls, [])
+
+    def test_slow_trickle_cannot_extend_the_total_body_deadline(self):
+        payload = {
+            "request_id": "req-slow-body",
+            "object_name": "Body",
+            "subelement": "Face4",
+            "operation": "resize_hole",
+            "diameter_mm": 8,
+            "units": "mm",
+        }
+        body_bytes = json.dumps(payload).encode("utf-8")
+        slow_tail = body_bytes[-6:]
+        connection = socket.create_connection((self.host, self.port), timeout=1)
+        connection.settimeout(1)
+        headers = (
+            "POST /patches HTTP/1.1\r\n"
+            f"Host: {self.host}:{self.port}\r\n"
+            f"Authorization: Bearer {self.token}\r\n"
+            "Content-Type: application/json\r\n"
+            f"Content-Length: {len(body_bytes)}\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        ).encode("ascii")
+        connection.sendall(headers + body_bytes[:-len(slow_tail)])
+        for byte in slow_tail:
+            time.sleep(0.02)
+            try:
+                connection.sendall(bytes([byte]))
+            except OSError:
+                break
+
+        response = http.client.HTTPResponse(connection)
+        response.begin()
+        status = response.status
+        response_body = json.loads(response.read())
+        connection.close()
+
+        self.assertEqual(status, 408)
+        self.assertEqual(response_body["error"]["code"], "BODY_READ_TIMEOUT")
+        self.assertEqual(self.dispatcher.calls, [])
+
+    def test_completed_body_cannot_dispatch_after_deadline_expires_during_parse(self):
+        payload = {
+            "request_id": "req-slow-parse",
+            "object_name": "Body",
+            "subelement": "Face4",
+            "operation": "resize_hole",
+            "diameter_mm": 8,
+            "units": "mm",
+        }
+        parse_request = bridge.parse_patch_request
+
+        def delayed_parse(raw_body):
+            time.sleep(0.06)
+            return parse_request(raw_body)
+
+        with mock.patch.object(
+            bridge, "parse_patch_request", side_effect=delayed_parse
+        ):
+            status, _, response_body = self.request(
+                "POST",
+                "/patches",
+                body=payload,
+                headers=self.auth_headers(Origin=self.origin),
+            )
+
+        self.assertEqual(status, 408)
+        self.assertEqual(response_body["error"]["code"], "BODY_READ_TIMEOUT")
+        self.assertEqual(self.dispatcher.calls, [])
+
+    def test_patch_body_cannot_dispatch_after_deadline_expires_during_parse(self):
+        parse_json = bridge.json.loads
+
+        def delayed_parse(raw_body):
+            time.sleep(0.06)
+            return parse_json(raw_body)
+
+        with mock.patch.object(bridge.json, "loads", side_effect=delayed_parse):
+            status, _, response_body = self.request(
+                "PATCH",
+                "/patches/patch-7/diameter",
+                body={"diameter_mm": 9, "units": "mm"},
+                headers=self.auth_headers(Origin=self.origin),
+            )
+
+        self.assertEqual(status, 408)
+        self.assertEqual(response_body["error"]["code"], "BODY_READ_TIMEOUT")
         self.assertEqual(self.dispatcher.calls, [])
 
     def test_dispatch_timeout_returns_gateway_timeout(self):
@@ -340,6 +435,23 @@ class GuiThreadDispatcherTests(unittest.TestCase):
 
         with self.assertRaises(TimeoutError):
             dispatcher.submit("selection", {}, timeout_s=0.01)
+
+    def test_gui_drain_cancels_queued_item_after_its_absolute_deadline(self):
+        dispatcher = GuiThreadDispatcher()
+        item = _WorkItem(action="create_patch", payload={})
+        item.deadline = time.monotonic() - 1
+        dispatcher._queue.put(item)
+        executed = []
+
+        self.assertTrue(
+            dispatcher.drain_one(
+                lambda action, _payload: executed.append(action)
+            )
+        )
+
+        self.assertEqual(executed, [])
+        self.assertEqual(item.state, "cancelled")
+        self.assertTrue(item.completed.is_set())
 
     def test_timeout_cannot_escape_after_gui_execution_has_started(self):
         dispatcher = GuiThreadDispatcher()

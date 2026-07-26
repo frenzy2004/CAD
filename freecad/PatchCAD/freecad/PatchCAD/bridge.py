@@ -12,6 +12,7 @@ import re
 import secrets
 import socket
 import threading
+import time
 from typing import Callable, Literal, Mapping, Protocol
 from urllib.parse import unquote, urlsplit
 
@@ -34,6 +35,19 @@ DEFAULT_ALLOWED_ORIGINS = (
 _PATCH_PATH = re.compile(r"^/patches/([A-Za-z0-9][A-Za-z0-9_.:-]{0,127})/(diameter|enabled)$")
 
 
+class _BodyTooLarge(Exception):
+    pass
+
+
+class _BodyReadTimeout(Exception):
+    pass
+
+
+def _require_before(deadline: float | None) -> None:
+    if deadline is not None and time.monotonic() >= deadline:
+        raise _BodyReadTimeout
+
+
 class Dispatcher(Protocol):
     def submit(self, action: str, payload: object, timeout_s: float) -> object: ...
 
@@ -42,6 +56,7 @@ class Dispatcher(Protocol):
 class _WorkItem:
     action: str
     payload: object
+    deadline: float = math.inf
     completed: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
     state: Literal["queued", "running", "cancelled", "completed"] = "queued"
@@ -56,9 +71,10 @@ class GuiThreadDispatcher:
         self._queue: queue.Queue[_WorkItem] = queue.Queue()
 
     def submit(self, action: str, payload: object, timeout_s: float) -> object:
-        item = _WorkItem(action=action, payload=payload)
+        deadline = time.monotonic() + timeout_s
+        item = _WorkItem(action=action, payload=payload, deadline=deadline)
         self._queue.put(item)
-        if not item.completed.wait(timeout_s):
+        if not item.completed.wait(max(0.0, deadline - time.monotonic())):
             with item.lock:
                 if item.state == "queued":
                     item.state = "cancelled"
@@ -78,6 +94,13 @@ class GuiThreadDispatcher:
             return False
         with item.lock:
             if item.state != "queued":
+                return True
+            if time.monotonic() >= item.deadline:
+                item.error = TimeoutError(
+                    "FreeCAD GUI thread did not respond in time"
+                )
+                item.state = "cancelled"
+                item.completed.set()
                 return True
             item.state = "running"
         result: object = None
@@ -127,13 +150,17 @@ class BridgeApplication:
     def dispatch(self, action: str, payload: object) -> object:
         return self.dispatcher.submit(action, payload, self.request_timeout_s)
 
-    def create_patch(self, raw_body: bytes) -> tuple[object, bool]:
+    def create_patch(
+        self, raw_body: bytes, *, deadline: float | None = None
+    ) -> tuple[object, bool]:
         request = parse_patch_request(raw_body)
+        _require_before(deadline)
         fingerprint = patch_request_fingerprint(request)
         created = False
 
         def apply() -> object:
             nonlocal created
+            _require_before(deadline)
             created = True
             return self.dispatch("create_patch", request)
 
@@ -300,19 +327,26 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.app.dispatch("selection", {}))
                 return
             if self.command == "POST" and path == "/patches":
-                result, created = self.app.create_patch(self._read_body())
+                deadline = time.monotonic() + self.app.request_timeout_s
+                result, created = self.app.create_patch(
+                    self._read_body(deadline=deadline),
+                    deadline=deadline,
+                )
                 self._json(HTTPStatus.CREATED if created else HTTPStatus.OK, result)
                 return
 
             match = _PATCH_PATH.fullmatch(path)
             if self.command == "PATCH" and match:
                 patch_id, operation = unquote(match.group(1)), match.group(2)
-                body = self._json_body()
+                deadline = time.monotonic() + self.app.request_timeout_s
+                body = self._json_body(deadline=deadline)
                 if operation == "diameter":
                     payload = self._diameter_payload(patch_id, body)
+                    _require_before(deadline)
                     self._json(HTTPStatus.OK, self.app.dispatch("update_diameter", payload))
                 else:
                     payload = self._enabled_payload(patch_id, body)
+                    _require_before(deadline)
                     self._json(HTTPStatus.OK, self.app.dispatch("set_enabled", payload))
                 return
             self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "endpoint not found")
@@ -349,7 +383,7 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
                 "request could not be completed",
             )
 
-    def _read_body(self) -> bytes:
+    def _read_body(self, *, deadline: float | None = None) -> bytes:
         if self.headers.get("Transfer-Encoding"):
             raise ProtocolError("chunked request bodies are not supported")
         raw_length = self.headers.get("Content-Length")
@@ -363,20 +397,34 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
             raise ProtocolError("Content-Length must not be negative")
         if length > self.app.max_body_bytes:
             raise _BodyTooLarge
+        if deadline is None:
+            deadline = time.monotonic() + self.app.request_timeout_s
         previous_timeout = self.connection.gettimeout()
-        self.connection.settimeout(self.app.request_timeout_s)
+        chunks: list[bytes] = []
+        received = 0
         try:
-            body = self.rfile.read(length)
+            while received < length:
+                _require_before(deadline)
+                remaining_time = deadline - time.monotonic()
+                self.connection.settimeout(remaining_time)
+                read_one_chunk = getattr(self.rfile, "read1", None)
+                if callable(read_one_chunk):
+                    chunk = read_one_chunk(length - received)
+                else:
+                    chunk = self.rfile.read(1)
+                if not chunk:
+                    raise ProtocolError("request body ended before Content-Length")
+                chunks.append(chunk)
+                received += len(chunk)
         except socket.timeout as exc:
             raise _BodyReadTimeout from exc
         finally:
             self.connection.settimeout(previous_timeout)
-        if len(body) != length:
-            raise ProtocolError("request body ended before Content-Length")
-        return body
+        _require_before(deadline)
+        return b"".join(chunks)
 
-    def _json_body(self) -> dict[str, object]:
-        raw = self._read_body()
+    def _json_body(self, *, deadline: float | None = None) -> dict[str, object]:
+        raw = self._read_body(deadline=deadline)
         try:
             value = json.loads(raw)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -427,11 +475,3 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
 
     def _error(self, status: HTTPStatus, code: str, message: str) -> None:
         self._json(status, {"error": {"code": code, "message": message}})
-
-
-class _BodyTooLarge(Exception):
-    pass
-
-
-class _BodyReadTimeout(Exception):
-    pass

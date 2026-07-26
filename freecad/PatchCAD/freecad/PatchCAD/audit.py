@@ -22,7 +22,7 @@ def _read_existing(path: Path) -> list[object]:
         if not path.exists():
             return []
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise AuditWriteError(f"cannot read existing audit: {exc}") from exc
     if (
         not isinstance(value, dict)

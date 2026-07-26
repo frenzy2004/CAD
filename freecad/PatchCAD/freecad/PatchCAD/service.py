@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import importlib
 from pathlib import Path
+from typing import Mapping
 import uuid
 
 from .audit import write_audit_entry
@@ -36,6 +37,38 @@ def _find_patch(document: object, property_name: str, value: str):
     return None
 
 
+def _open_documents(app: object) -> list[object]:
+    documents: list[object] = []
+    listed = getattr(app, "listDocuments", None)
+    if callable(listed):
+        values = listed()
+        if not isinstance(values, Mapping):
+            raise PatchServiceError("FreeCAD did not return its open document map")
+        documents.extend(values.values())
+    active = getattr(app, "ActiveDocument", None)
+    if active is not None:
+        documents.append(active)
+
+    unique: list[object] = []
+    for document in documents:
+        if not any(document is candidate for candidate in unique):
+            unique.append(document)
+    return unique
+
+
+def _find_global_request_patch(app: object, request_id: str):
+    matches = [
+        patch
+        for document in _open_documents(app)
+        if (patch := _find_patch(document, "RequestId", request_id)) is not None
+    ]
+    if len(matches) > 1:
+        raise IdempotencyConflict(
+            "request_id already exists in multiple open documents"
+        )
+    return matches[0] if matches else None
+
+
 def _patch_response(patch: object, *, idempotent: bool = False) -> dict[str, object]:
     return {
         "patch_id": patch.PatchId,  # type: ignore[attr-defined]
@@ -48,6 +81,18 @@ def _patch_response(patch: object, *, idempotent: bool = False) -> dict[str, obj
         "enabled": bool(patch.Enabled),  # type: ignore[attr-defined]
         "idempotent": idempotent,
     }
+
+
+def _persisted_replay(
+    patch: object, request_fingerprint: str
+) -> dict[str, object]:
+    if getattr(patch, "RequestFingerprint", "") != request_fingerprint:
+        raise IdempotencyConflict(
+            "request_id was already used with a different payload"
+        )
+    response = _patch_response(patch, idempotent=True)
+    response["audit_error"] = None
+    return response
 
 
 def _execution_serial(patch: object) -> int:
@@ -89,18 +134,20 @@ class PatchService:
         self, request: PatchRequest, target: SelectionTarget | None = None
     ) -> dict[str, object]:
         app = _app()
+        request_fingerprint = patch_request_fingerprint(request)
+        existing = _find_global_request_patch(app, request.request_id)
+        if existing is None and target is not None:
+            existing = _find_patch(
+                target.source.Document, "RequestId", request.request_id
+            )
+        if existing is not None:
+            return _persisted_replay(existing, request_fingerprint)
+
         target = target or resolve_request(request)
         document = target.source.Document
-        request_fingerprint = patch_request_fingerprint(request)
         existing = _find_patch(document, "RequestId", request.request_id)
         if existing is not None:
-            if getattr(existing, "RequestFingerprint", "") != request_fingerprint:
-                raise IdempotencyConflict(
-                    "request_id was already used with a different payload"
-                )
-            response = _patch_response(existing, idempotent=True)
-            response["audit_error"] = None
-            return response
+            return _persisted_replay(existing, request_fingerprint)
 
         patch_id = str(uuid.uuid4())
         audit_id = str(uuid.uuid4())

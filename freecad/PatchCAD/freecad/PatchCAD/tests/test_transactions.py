@@ -1,5 +1,7 @@
 import hashlib
 import json
+from pathlib import Path
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -160,6 +162,38 @@ class MutationRecomputeTests(unittest.TestCase):
         self.assertEqual(patch.Document.commits, 1)
         self.assertEqual(patch.Document.aborts, 0)
 
+    def test_invalid_utf8_audit_is_post_commit_audit_error(self):
+        patch = PatchObject()
+
+        def fresh_recompute():
+            patch.Proxy.execution_serial += 1
+            patch.Shape = ValidStaleShape()
+            return 1
+
+        patch.Document.recompute_behavior = fresh_recompute
+        with tempfile.TemporaryDirectory() as directory:
+            document_path = Path(directory) / "Bracket.FCStd"
+            patch.Document.FileName = str(document_path)
+            Path(f"{document_path}.patchcad.audit.json").write_bytes(b"\xff")
+            result = None
+            error = None
+
+            try:
+                result = PatchService()._mutate_patch(
+                    patch,
+                    "Update PatchCAD diameter",
+                    lambda: setattr(patch, "Diameter", 12.0),
+                    {"operation": "update_diameter", "diameter_mm": 12.0},
+                )
+            except UnicodeDecodeError as exc:
+                error = exc
+
+        self.assertIsNone(error)
+        self.assertEqual(result["audit_error"]["code"], "AUDIT_WRITE_FAILED")
+        self.assertEqual(patch.Diameter, 12.0)
+        self.assertEqual(patch.Document.commits, 1)
+        self.assertEqual(patch.Document.aborts, 0)
+
 
 class PersistedIdempotencyTests(unittest.TestCase):
     @staticmethod
@@ -205,6 +239,120 @@ class PersistedIdempotencyTests(unittest.TestCase):
         with mock.patch.object(service, "_app", return_value=SimpleNamespace()):
             with self.assertRaisesRegex(ProtocolError, "different payload"):
                 PatchService().create_patch(changed, target)
+
+    def test_exact_replay_returns_original_document_after_active_document_changes(self):
+        request = PatchRequest(
+            request_id="request-global",
+            document=None,
+            object_name="Body",
+            subelement="Face4",
+            operation="resize_hole",
+            diameter_mm=6.0,
+        )
+        persisted = PatchObject()
+        persisted.RequestId = request.request_id
+        persisted.RequestFingerprint = self.fingerprint(request)
+        other_document = SimpleNamespace(Name="Other", Objects=[])
+        app = SimpleNamespace(
+            ActiveDocument=other_document,
+            listDocuments=lambda: {
+                "Bracket": persisted.Document,
+                "Other": other_document,
+            },
+        )
+        result = None
+        error = None
+
+        with (
+            mock.patch.object(service, "_app", return_value=app),
+            mock.patch.object(
+                service,
+                "resolve_request",
+                side_effect=AssertionError("replay must not resolve the new active document"),
+            ),
+        ):
+            try:
+                result = PatchService().create_patch(request)
+            except AssertionError as exc:
+                error = exc
+
+        self.assertIsNone(error)
+        self.assertEqual(result["patch_id"], persisted.PatchId)
+        self.assertEqual(result["document"], "Bracket")
+        self.assertTrue(result["idempotent"])
+
+    def test_global_request_id_conflicts_before_resolving_changed_document_or_payload(self):
+        original = PatchRequest(
+            request_id="request-global-conflict",
+            document="Bracket",
+            object_name="Body",
+            subelement="Face4",
+            operation="resize_hole",
+            diameter_mm=6.0,
+        )
+        persisted = PatchObject()
+        persisted.RequestId = original.request_id
+        persisted.RequestFingerprint = self.fingerprint(original)
+        other_document = SimpleNamespace(Name="Other", Objects=[])
+        app = SimpleNamespace(
+            ActiveDocument=other_document,
+            listDocuments=lambda: {
+                "Bracket": persisted.Document,
+                "Other": other_document,
+            },
+        )
+        changed_requests = (
+            PatchRequest(**{**original.__dict__, "document": "Other"}),
+            PatchRequest(**{**original.__dict__, "diameter_mm": 8.0}),
+        )
+
+        for changed in changed_requests:
+            with self.subTest(changed=changed):
+                error = None
+                with (
+                    mock.patch.object(service, "_app", return_value=app),
+                    mock.patch.object(
+                        service,
+                        "resolve_request",
+                        side_effect=AssertionError(
+                            "request conflict must precede target resolution"
+                        ),
+                    ),
+                ):
+                    try:
+                        PatchService().create_patch(changed)
+                    except BaseException as exc:
+                        error = exc
+
+                self.assertIsInstance(error, ProtocolError)
+                self.assertIn("different payload", str(error))
+
+    def test_duplicate_persisted_request_id_across_documents_is_ambiguous(self):
+        request = PatchRequest(
+            request_id="request-duplicate",
+            document=None,
+            object_name="Body",
+            subelement="Face4",
+            operation="resize_hole",
+            diameter_mm=6.0,
+        )
+        first = PatchObject()
+        second = PatchObject()
+        for patch in (first, second):
+            patch.RequestId = request.request_id
+            patch.RequestFingerprint = self.fingerprint(request)
+        second.Document.Name = "Other"
+        app = SimpleNamespace(
+            ActiveDocument=second.Document,
+            listDocuments=lambda: {
+                "Bracket": first.Document,
+                "Other": second.Document,
+            },
+        )
+
+        with mock.patch.object(service, "_app", return_value=app):
+            with self.assertRaisesRegex(ProtocolError, "multiple open documents"):
+                PatchService().create_patch(request)
 
 
 if __name__ == "__main__":

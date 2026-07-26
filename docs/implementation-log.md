@@ -17,6 +17,22 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## FreeCAD workstream
 
+### 2026-07-26 20:55 +08 — Task 11 Fix Round 2 deadline, replay, audit, and topology gates
+
+- Branch/commit: `agent/patchcad-freecad` after `1a528e2` (this fix commit)
+- Attempt: Reproduce all five validated review findings with focused behavior tests before tightening the FreeCAD-independent bridge and service.
+- Result: worked
+- Evidence: The audit regression was RED because an invalid UTF-8 sidecar escaped as `UnicodeDecodeError(... invalid start byte)` after the CAD transaction had committed; wrapping `UnicodeError` as `AuditWriteError` made it GREEN with `AUDIT_WRITE_FAILED` while retaining the new diameter and one commit. The queued-work regression was RED because the expired item executed (`['create_patch'] != []`); an absolute `time.monotonic()` deadline carried by each item and checked under its lock made all four dispatcher tests GREEN. The real slow-trickle HTTP regression was RED after the required loopback-permission rerun (`201 != 408`); deadline-aware `read1` chunks made it GREEN with 408 and zero dispatches. Two completed-body parse seams were then RED (`POST 201 != 408`; `PATCH 200 != 408`); carrying the same deadline through parsing and checking it at the dispatch boundary made both GREEN with zero dispatches. Global replay tests were RED because target resolution followed the new active document, changed document/payload requests raised the test sentinel instead of `ProtocolError`, and duplicate persisted IDs raised no conflict; scanning every open document before target resolution made all four persisted-idempotency tests GREEN. The drill-tip regression was RED with `SelectionError not raised`; requiring two cylindrical boundary loops, one planar adjacent face at each end, and an open sampled cross-section also rejected an internal shoulder with a smaller pilot opening. The first topology seam used the wrong `"Face"` argument and failed the acceptance case; current FreeCAD `TopoShapePy::ancestorsOfType` requires a shape subtype, so `type(face)` made the six selection tests GREEN.
+- Carry-forward rule: A queued GUI mutation and an HTTP body both have one absolute monotonic deadline. Request IDs are global across all open FreeCAD documents and ambiguous duplicates fail closed. Existing-hole resize requires topology plus cross-section evidence for two straight planar openings; centerline emptiness alone is never through-hole proof. Audit decoding failures are post-commit `AUDIT_WRITE_FAILED` responses, not transaction rollbacks.
+
+### 2026-07-26 20:55 +08 — Task 11 Fix Round 2 verification and runtime boundary
+
+- Branch/commit: `agent/patchcad-freecad` after `1a528e2` (this fix commit)
+- Attempt: Run the complete standard-Python suite, compilation, add-on metadata, lazy-import, and executable-availability checks.
+- Result: worked for FreeCAD-independent checks; FreeCAD runtime remains unavailable
+- Evidence: The restricted first `npm run test:freecad` attempt reported 13 loopback-bind `PermissionError: [Errno 1] Operation not permitted` errors while all non-socket tests passed. The final approved loopback rerun completed 51/51 tests in 7.714 seconds. `python3 -m compileall -q` passed, `xmllint --noout` passed, and metadata resolved to `PatchCADWorkbench|1.1.0|part`. Importing `protocol`, `audit`, and `bridge` left `FreeCAD`, `FreeCADGui`, and `Part` absent from `sys.modules`. No `FreeCADCmd`, `freecadcmd`, `FreeCAD`, or `freecad` executable was found.
+- Carry-forward rule: Keep the socket tests real and rerun them through approved loopback permission in this managed environment. These checks do not substitute for FreeCAD 1.1 geometry, recompute, undo, or GUI smoke tests; continue to report those runtime checks as unrun.
+
 ### 2026-07-26 19:17 +08 — Task 11 Fix Round 1 geometry and recompute gates
 
 - Branch/commit: `agent/patchcad-freecad` after `7673f0e`

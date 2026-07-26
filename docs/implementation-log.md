@@ -15,6 +15,22 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Health route and attribution slice
+
+- Branch/commit: `agent/patchcad-integration` Task 12 partial
+- Attempt: Add a cache-disabled health route that reveals only provider configuration presence, then document the trust boundary, noncommercial scope, supported limits, exact upstream licenses, and Text2CAD inspiration boundary.
+- Result: worked
+- Evidence: The two focused suites were RED on missing health modules, then passed 5 tests after adding a server-only injectable handler and an App Router module exposing only `GET`. The full suite passed 62 tests; typecheck, lint, and the Next production build passed and emitted dynamic `/api/health`, `/api/plan`, and `/api/research` routes. Installed package metadata and upstream license files agree that all three replicad packages are MIT, FreeCAD is LGPL-2.1-or-later, OCCT is LGPL-2.1 with its exception, and Text2CAD is CC BY-NC-SA 4.0.
+- Carry-forward rule: Health responses may reveal only booleans, never values. Keep Text2CAD credit explicitly inspiration-only unless its noncommercial ShareAlike material is intentionally incorporated.
+
+### 2026-07-26 — Synchronous health handler test assumption
+
+- Branch/commit: `agent/patchcad-integration` health-route TDD
+- Attempt: Parse the health handler's `Response` by calling `.then` directly on the handler result.
+- Result: failed, then worked
+- Evidence: The test failed with `TypeError: GET(...).then is not a function` because the injectable handler intentionally returns a synchronous `Response`. Reading `response.json()` directly made the unchanged implementation and both focused suites pass.
+- Carry-forward rule: Route handlers may return `Response` or `Promise<Response>`; tests must await the body method on the returned response instead of assuming the handler itself is promise-shaped.
+
 ### 2026-07-26 — Parallel Next build lock collision
 
 - Branch/commit: `agent/patchcad-providers` verification gate

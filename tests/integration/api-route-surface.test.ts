@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as healthRoute from "@/app/api/health/route";
 import * as planRoute from "@/app/api/plan/route";
 import * as researchRoute from "@/app/api/research/route";
 
@@ -22,6 +23,7 @@ const supportedRouteExports = new Set([
 
 describe("Next route module surfaces", () => {
   it.each([
+    ["health", healthRoute],
     ["plan", planRoute],
     ["research", researchRoute],
   ])("%s route exposes only supported Next route fields", (_name, routeModule) => {

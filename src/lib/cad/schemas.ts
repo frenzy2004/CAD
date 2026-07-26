@@ -86,7 +86,7 @@ export const PatchPlanSchema = z.discriminatedUnion("operation", [
 export const SelectionEnvelopeSchema = z
   .object({
     units: z.literal(CONTRACT.units),
-    editableFeatureIds: z.array(HoleIdSchema).min(1),
+    editableFeatureIds: z.array(HoleIdSchema),
     editableFaceIds: z.array(z.literal("face:top")),
     pointMm: Point3MmSchema.optional(),
   })

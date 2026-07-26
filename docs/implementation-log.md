@@ -15,6 +15,22 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Task 3 retry after interrupted no-op
+
+- Branch/commit: `agent/patchcad-foundation` at `e904f2f`
+- Attempt: Restart deterministic patch-engine Task 3 after the previously dispatched agent was interrupted.
+- Result: failed
+- Evidence: The branch remained at the Task 2 contract commit and contained no Task 3 source, test, or documentation changes to preserve.
+- Carry-forward rule: Treat this as a clean TDD retry; record fresh RED and GREEN evidence rather than inferring progress from the interrupted attempt.
+
+### 2026-07-26 — Deterministic local patch engine
+
+- Branch/commit: `agent/patchcad-foundation` after `e904f2f`
+- Attempt: Build a pure semantic-ID patch engine and locality verifier with behavior-first tests for selected resize, top-face addition, validation rejections, protected fingerprints, tolerance, and immutable undo snapshots.
+- Result: worked
+- Evidence: The add-only selection contract test first failed because `editableFeatureIds` required one ID, then passed after allowing an empty feature list for a face-only envelope. The new patch test first failed on the missing modules, and the final `npm test` passed 25 tests; `npm run typecheck` and `npm run lint` exited 0.
+- Carry-forward rule: Keep face-only add-hole authorization distinct from semantic feature authorization; generate new IDs deterministically and compare only fingerprints during locality checks, never array positions.
+
 ### 2026-07-26 — Repository and local runtime
 
 - Branch/commit: `agent/patchcad-design` at `4900d80`

@@ -108,6 +108,21 @@ describe("PatchCAD contracts", () => {
     ).toBe(true);
   });
 
+  it("accepts an add-hole selection that authorizes only the top face", () => {
+    expect(
+      PlanRequestSchema.safeParse({
+        prompt: "Add a centered mounting hole.",
+        snapshot: bracketContext,
+        selection: {
+          units: "mm",
+          editableFeatureIds: [],
+          editableFaceIds: ["face:top"],
+          pointMm: { x: 50, y: 32, z: 0 },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
   it("accepts a public research source response", () => {
     expect(
       ResearchResponseSchema.safeParse({

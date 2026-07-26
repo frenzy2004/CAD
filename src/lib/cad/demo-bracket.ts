@@ -1,0 +1,44 @@
+import type { BracketSnapshot } from "./schemas";
+
+export function createDemoBracket(): BracketSnapshot {
+  return {
+    version: 1,
+    kind: "mounting_bracket",
+    units: "mm",
+    dimensions: {
+      widthMm: 100,
+      depthMm: 64,
+      heightMm: 8,
+    },
+    holes: [
+      {
+        id: "hole:nw",
+        kind: "through_hole",
+        centerMm: { x: 12, y: 52, z: 0 },
+        diameterMm: 6,
+        axis: { x: 0, y: 0, z: 1 },
+      },
+      {
+        id: "hole:ne",
+        kind: "through_hole",
+        centerMm: { x: 88, y: 52, z: 0 },
+        diameterMm: 6,
+        axis: { x: 0, y: 0, z: 1 },
+      },
+      {
+        id: "hole:sw",
+        kind: "through_hole",
+        centerMm: { x: 12, y: 12, z: 0 },
+        diameterMm: 6,
+        axis: { x: 0, y: 0, z: 1 },
+      },
+      {
+        id: "hole:se",
+        kind: "through_hole",
+        centerMm: { x: 88, y: 12, z: 0 },
+        diameterMm: 6,
+        axis: { x: 0, y: 0, z: 1 },
+      },
+    ],
+  };
+}

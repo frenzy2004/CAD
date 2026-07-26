@@ -174,3 +174,13 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: worked
 - Evidence: `npm test -- tests/unit/schemas.test.ts` passed 11 tests, and `npm run typecheck` exited 0.
 - Carry-forward rule: Treat all untrusted CAD, plan, and research payloads as strict millimetre-only boundaries; use `PatchPlanSchema` as the only accepted executable intent and keep provider credentials out of every shared contract and response type.
+
+## Browser kernel workstream
+
+### 2026-07-26 — Exact OpenCascade browser worker
+
+- Branch/commit: `agent/patchcad-kernel` at `f5f6e33`
+- Attempt: Add a strict transferable worker protocol, a single-initialization Replicad/OpenCascade worker, exact bracket/STEP operations, imported-solid session holes rebuilt from an untouched B-rep, and lazy React lifecycle management.
+- Result: worked with browser-runtime verification carried forward
+- Evidence: The protocol suite was RED because `@/lib/cad/worker-protocol` did not exist, then GREEN with 7 tests covering UUID IDs, unknown/extra message rejection, finite typed geometry, triangle/index invariants, bounds, face groups, and bracket hole anchors. The final repository suite passed 46 tests; type checking and lint exited 0. `npm run build` emitted `.next/static/chunks/cad.worker.js`, the pinned 10 MB `public/cad-runtime/replicad_single-0.23.0.wasm`, and no CAD runtime signatures in `.next/server` JavaScript. A direct jsdom capability check reported `Worker: "undefined"` while `WebAssembly: "object"`, so Vitest cannot execute the real browser worker.
+- Carry-forward rule: Task 12 must exercise initialize, exact bracket build, STEP export/re-import, one-solid STEP import, planar session-hole add/resize, non-planar/pre-existing-hole rejection, and transferable mesh face groups in Playwright against the emitted worker and real pinned WASM. Do not add a fake production kernel or import Replicad/OCCT from any server graph.

@@ -15,6 +15,94 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 20:09 — Workspace independent-review hardening
+
+- Branch/commit: `agent/patchcad-workspace` PR review fix
+- Attempt: Reproduce and close the real-viewport selection, stale-plan, async race, keyboard accessibility, research invalidation, and worker-status findings without weakening exact-geometry boundaries.
+- Result: worked
+- Evidence: Regressions were RED for missing keyboard selection, preview mesh revision clearing the selection, instruction edits retaining an applicable stale plan, a pending 9 mm rebuild overwriting a newer blank value, stale research appearing after JSON body parsing, and an errored worker still announcing `Exact kernel ready`. The non-configuration provider-error test passed immediately and proved there was no offline fallback. After the fixes, all focused regressions passed; the full web suite passed 18 files and 122 tests, warning-free lint and typecheck passed, and the production build emitted all routes. Reject and Reset restoration also have workflow coverage.
+- Carry-forward rule: Preserve semantic selection across explicitly authorized workspace mesh revisions only; every user edit must invalidate older async work before validation or body parsing completes, and kernel accessibility text must derive from worker status rather than retained mesh availability.
+
+### 2026-07-26 20:09 — FreeCAD test script points to an unmerged package
+
+- Branch/commit: `agent/patchcad-workspace` PR review verification
+- Attempt: Run the repository `npm run test:freecad` gate after the workspace fixes.
+- Result: failed
+- Evidence: Python exited before collecting tests with `Start directory is not importable: 'freecad/PatchCAD/freecad/PatchCAD/tests'`; this branch contains only `freecad/README.md`, while the FreeCAD package remains on its separate implementation branch.
+- Carry-forward rule: Do not report FreeCAD tests as executed on a branch that does not contain the package. Merge the reviewed FreeCAD branch before making this script a required combined-branch gate.
+
+### 2026-07-26 19:44 — Verified STEP and audit workspace exports
+
+- Branch/commit: `agent/patchcad-workspace` Task 10
+- Attempt: Wire the reviewed artifact utilities to the applied exact-worker state while keeping unverified exports locked.
+- Result: worked
+- Evidence: The export workflow was RED because an enabled toolbar button had no export behavior, then GREEN after STEP requested the worker's current exact shape and audit export hashed only the typed before/after state. Two workspace tests, 12 artifact tests, all 114 repository tests, typecheck, warning-free lint, and the production build passed.
+- Carry-forward rule: Export the worker's current shape only after Apply establishes a verified state; reject empty STEP bytes, use fixed filenames/MIME types, and build audit JSON only from the typed applied-patch record.
+
+### 2026-07-26 19:41 — Explicit Testing Library cleanup
+
+- Branch/commit: `agent/patchcad-workspace` Task 10 RED
+- Attempt: Add a second integration workflow while relying on Testing Library's automatic cleanup.
+- Result: failed, then worked
+- Evidence: The second test found two `Download STEP` buttons because this Vitest setup imports lifecycle functions rather than exposing them globally, so Testing Library did not register its global auto-cleanup hook. Calling `cleanup()` in the file's existing `afterEach` restored isolation; the next run reached the intended missing-export failure.
+- Carry-forward rule: Integration test files using imported Vitest lifecycle functions must register explicit DOM cleanup when multiple renders share the file; treat duplicate accessible elements across tests as a harness-isolation failure before diagnosing product behavior.
+
+### 2026-07-26 19:39 — Complete local patch workspace
+
+- Branch/commit: `agent/patchcad-workspace` Task 9
+- Attempt: Assemble the exact worker, Magic Circle selection, provider/offline planning, deterministic verification, and non-chat industrial UI behind one explicit reducer.
+- Result: worked
+- Evidence: The workflow suite was first RED because `PatchWorkspace` did not exist, then GREEN for exact-kernel readiness, `hole:nw` selection, an 8 mm offline-grammar preview, one changed feature, three protected holes unchanged, Apply, and one-level Undo. The full gate passed 111 tests, typecheck, warning-free lint, and the Next production build.
+- Carry-forward rule: Keep WebGL, Worker transport, and provider HTTP as the only workflow-test doubles. A successful worker build authorizes the preview, Exa remains evidence-only, and real OpenCascade WASM/browser behavior stays an explicit Playwright fact for Task 12.
+
+### 2026-07-26 — Artifact boundary review fix
+
+- Branch/commit: `agent/patchcad-integration` download review
+- Attempt: Close independent-review gaps in canonical hashing, fixed artifact extensions, and cleanup/audit assertions before workspace wiring.
+- Result: worked
+- Evidence: Two regressions were RED: duplicate semantic hole IDs were hashable in source order, and a runtime extension such as `.step/../../unsafe` was appended unsanitized. Hashing now rejects duplicate IDs and the public helper accepts only `.step` or `.json` at both type and runtime boundaries. Tests now also prove anchor removal after click failure and the exact top-level audit key set. All 12 focused tests, typecheck, and lint pass.
+- Carry-forward rule: Semantic hashes require unique IDs before sorting; never expose a “safe filename” helper with an unconstrained extension parameter, and assert exact audit surfaces rather than partial object matches.
+
+### 2026-07-26 — Playwright browser runtime
+
+- Branch/commit: integration verification environment
+- Attempt: Check for and preinstall the lockfile-matched Playwright Chromium runtime before the real CAD/WASM end-to-end gate.
+- Result: worked
+- Evidence: `npx playwright install --dry-run chromium` identified missing Chromium build 1234, FFmpeg 1011, and its headless shell. The approved `npx playwright install chromium` downloaded all three successfully to Playwright's user cache.
+- Carry-forward rule: Reuse Playwright Chromium build 1234 for Task 12; do not repeat the ~275 MiB browser download unless the pinned Playwright version changes.
+
+### 2026-07-26 — Research route actual-byte bound
+
+- Branch/commit: `agent/patchcad-integration` provider hardening
+- Attempt: Apply the existing streaming 64 KiB JSON reader consistently to the Exa route instead of trusting `request.json()`.
+- Result: worked
+- Evidence: Three regressions were RED with `502`: a declared 70,000-byte body and valid JSON padded beyond 64 KiB with missing or falsified `Content-Length` all reached the Exa adapter. The research handler now uses `readBoundedJson`; all 7 focused tests pass and the adapter is never reached for those bodies. Typecheck and lint pass.
+- Carry-forward rule: Every provider route must cap actual stream bytes independently of `Content-Length`; schema size limits do not protect the server from oversized-but-valid JSON framing.
+
+### 2026-07-26 — Exact STEP and audit download boundary
+
+- Branch/commit: `agent/patchcad-integration` Task 10 partial
+- Attempt: Build the browser-only artifact utility before workspace wiring, with fixed MIME types, safe filenames, exact byte reporting, explicit audit serialization, and deterministic cleanup.
+- Result: worked
+- Evidence: The first suite was RED on the missing module. Two follow-up regressions were RED because an anchor cleanup exception could prevent URL revocation and because `planSource` relied only on TypeScript; nested cleanup and a runtime source allowlist fixed both. A later RED required a real validated SHA-256 helper for before/after bracket state; it now canonicalizes hole order by semantic ID. All 10 focused tests, typecheck, and lint pass.
+- Carry-forward rule: Workspace export must call this boundary only after worker verification. Audit serialization explicitly selects typed fields, object URL cleanup must remain inside a nested `finally`, and bracket audit hashes must use the canonical semantic-ID order.
+
+### 2026-07-26 — Health route and attribution slice
+
+- Branch/commit: `agent/patchcad-integration` Task 12 partial
+- Attempt: Add a cache-disabled health route that reveals only provider configuration presence, then document the trust boundary, noncommercial scope, supported limits, exact upstream licenses, and Text2CAD inspiration boundary.
+- Result: worked
+- Evidence: The two focused suites were RED on missing health modules, then passed 5 tests after adding a server-only injectable handler and an App Router module exposing only `GET`. The full suite passed 62 tests; typecheck, lint, and the Next production build passed and emitted dynamic `/api/health`, `/api/plan`, and `/api/research` routes. Installed package metadata and upstream license files agree that all three replicad packages are MIT, FreeCAD is LGPL-2.1-or-later, OCCT is LGPL-2.1 with its exception, and Text2CAD is CC BY-NC-SA 4.0.
+- Carry-forward rule: Health responses may reveal only booleans, never values. Keep Text2CAD credit explicitly inspiration-only unless its noncommercial ShareAlike material is intentionally incorporated.
+
+### 2026-07-26 — Synchronous health handler test assumption
+
+- Branch/commit: `agent/patchcad-integration` health-route TDD
+- Attempt: Parse the health handler's `Response` by calling `.then` directly on the handler result.
+- Result: failed, then worked
+- Evidence: The test failed with `TypeError: GET(...).then is not a function` because the injectable handler intentionally returns a synchronous `Response`. Reading `response.json()` directly made the unchanged implementation and both focused suites pass.
+- Carry-forward rule: Route handlers may return `Response` or `Promise<Response>`; tests must await the body method on the returned response instead of assuming the handler itself is promise-shaped.
+
 ### 2026-07-26 — Parallel Next build lock collision
 
 - Branch/commit: `agent/patchcad-providers` verification gate

@@ -16,15 +16,19 @@ import {
 
 import {
   CadMeshSchema,
-  CadWorkerRequestSchema,
   MAX_STEP_IMPORT_BYTES,
-  createCadWorkerRequestId,
+  createCadWorkerDispatcher,
   transferableReplyBuffers,
   type CadMesh,
   type CadWorkerReply,
   type CadWorkerRequest,
   type ImportedModelSummary,
 } from "@/lib/cad/worker-protocol";
+import {
+  commitPreparedResource,
+  commitPreparedResourceAsync,
+  retainValidatedResource,
+} from "@/lib/cad/owned-resource";
 import type { BracketSnapshot, Point3Mm } from "@/lib/cad/schemas";
 
 type WorkerScope = {
@@ -50,7 +54,6 @@ class CadKernelError extends Error {
 }
 
 const workerScope = self as unknown as WorkerScope;
-const seenRequestIds = new Set<string>();
 
 let initializePromise: Promise<void> | null = null;
 let currentShape: Shape3D | null = null;
@@ -143,8 +146,10 @@ function bracketAnchors(snapshot: BracketSnapshot): CadMesh["holeAnchors"] {
   }));
 }
 
-function importedAnchors(): CadMesh["holeAnchors"] {
-  return sessionHoles.map((hole) => ({
+function importedAnchors(
+  holes: SessionHole[],
+): CadMesh["holeAnchors"] {
+  return holes.map((hole) => ({
     featureId: hole.id,
     pointMm: hole.pointMm,
     diameterMm: hole.diameterMm,
@@ -154,6 +159,7 @@ function importedAnchors(): CadMesh["holeAnchors"] {
 function meshShape(
   shape: Shape3D,
   source: "bracket" | "imported-step",
+  holeAnchors: CadMesh["holeAnchors"],
 ): CadMesh {
   const mesh = shape.mesh({ tolerance: 0.05, angularTolerance: 0.1 });
 
@@ -164,10 +170,7 @@ function meshShape(
     normals: new Float32Array(mesh.normals),
     bounds: shapeBounds(shape),
     faceGroups: mesh.faceGroups,
-    holeAnchors:
-      source === "bracket" && bracketSnapshot
-        ? bracketAnchors(bracketSnapshot)
-        : importedAnchors(),
+    holeAnchors,
   });
 }
 
@@ -203,25 +206,25 @@ function buildBracket(snapshot: BracketSnapshot): Solid {
   }
 }
 
-function importedModelSummary(shape: Shape3D): ImportedModelSummary {
+function importedModelSummary(
+  shape: Shape3D,
+  byteLength = importedByteLength,
+  sessionHoleCount = sessionHoles.length,
+): ImportedModelSummary {
   return {
     kind: "imported-step",
-    byteLength: importedByteLength,
+    byteLength,
     solidCount: 1,
     bounds: shapeBounds(shape),
-    sessionHoleCount: sessionHoles.length,
+    sessionHoleCount,
   };
 }
 
 function ownSingleImportedSolid(imported: AnyShape): Solid {
   if (imported instanceof Solid) {
-    try {
+    return retainValidatedResource(imported, () => {
       validateSolid(imported, "INVALID_STEP_SOLID");
-      return imported;
-    } catch (error) {
-      imported.delete();
-      throw error;
-    }
+    });
   }
 
   const rawSolids = [...iterTopo(imported.wrapped, "solid")];
@@ -242,8 +245,9 @@ function ownSingleImportedSolid(imported: AnyShape): Solid {
         );
       }
       const owned = selected.clone();
-      validateSolid(owned, "INVALID_STEP_SOLID");
-      return owned;
+      return retainValidatedResource(owned, () => {
+        validateSolid(owned, "INVALID_STEP_SOLID");
+      });
     } finally {
       selected.delete();
     }
@@ -280,7 +284,7 @@ function cylinderForSessionHole(
   );
 }
 
-function rebuildImportedResult(): Solid {
+function rebuildImportedResult(holes: SessionHole[]): Solid {
   if (!importedBaseShape) {
     throw new CadKernelError(
       "NO_IMPORTED_MODEL",
@@ -298,7 +302,7 @@ function rebuildImportedResult(): Solid {
 
   let result: Shape3D = importedBaseShape.clone();
   try {
-    for (const hole of sessionHoles) {
+    for (const hole of holes) {
       const cutter = cylinderForSessionHole(hole, modelDiagonal);
       try {
         const next = result.cut(cutter);
@@ -375,13 +379,24 @@ async function handleRequest(
 
   if (request.type === "build") {
     const result = buildBracket(request.snapshot);
-    clearImportedState();
-    bracketSnapshot = request.snapshot;
-    replaceCurrentShape(result, "bracket");
+    const mesh = commitPreparedResource(
+      result,
+      (candidate) =>
+        meshShape(
+          candidate,
+          "bracket",
+          bracketAnchors(request.snapshot),
+        ),
+      (candidate) => {
+        clearImportedState();
+        bracketSnapshot = request.snapshot;
+        replaceCurrentShape(candidate, "bracket");
+      },
+    );
     return {
       id: request.id,
       type: "mesh",
-      mesh: meshShape(result, "bracket"),
+      mesh,
     };
   }
 
@@ -398,21 +413,45 @@ async function handleRequest(
 
     const imported = await importSTEP(new Blob([request.bytes]));
     const base = ownSingleImportedSolid(imported);
-    const result = base.clone();
-    validateSolid(result, "INVALID_STEP_SOLID");
+    let result: Solid;
+    try {
+      result = retainValidatedResource(base.clone(), (candidate) => {
+        validateSolid(candidate, "INVALID_STEP_SOLID");
+      });
+    } catch (error) {
+      base.delete();
+      throw error;
+    }
 
-    clearImportedState();
-    importedBaseShape = base;
-    importedByteLength = request.bytes.byteLength;
-    bracketSnapshot = null;
-    replaceCurrentShape(result, "imported-step");
+    try {
+      const prepared = commitPreparedResource(
+        result,
+        (candidate) => ({
+          model: importedModelSummary(
+            candidate,
+            request.bytes.byteLength,
+            0,
+          ),
+          mesh: meshShape(candidate, "imported-step", []),
+        }),
+        (candidate) => {
+          clearImportedState();
+          importedBaseShape = base;
+          importedByteLength = request.bytes.byteLength;
+          bracketSnapshot = null;
+          replaceCurrentShape(candidate, "imported-step");
+        },
+      );
 
-    return {
-      id: request.id,
-      type: "imported",
-      model: importedModelSummary(result),
-      mesh: meshShape(result, "imported-step"),
-    };
+      return {
+        id: request.id,
+        type: "imported",
+        ...prepared,
+      };
+    } catch (error) {
+      base.delete();
+      throw error;
+    }
   }
 
   if (request.type === "cut-session-hole") {
@@ -447,34 +486,55 @@ async function handleRequest(
       diameterMm: request.diameterMm,
     };
 
-    const previousHoles = sessionHoles;
-    sessionHoles =
+    const nextSessionHoles =
       existingIndex >= 0
         ? sessionHoles.map((hole, index) =>
             index === existingIndex ? nextHole : hole,
           )
         : [...sessionHoles, nextHole];
 
-    try {
-      const result = rebuildImportedResult();
-      if (existingIndex < 0) nextSessionHoleNumber += 1;
-      replaceCurrentShape(result, "imported-step");
-      return {
-        id: request.id,
-        type: "mesh",
-        mesh: meshShape(result, "imported-step"),
-      };
-    } catch (error) {
-      sessionHoles = previousHoles;
-      throw error;
-    }
+    const result = rebuildImportedResult(nextSessionHoles);
+    const mesh = commitPreparedResource(
+      result,
+      (candidate) =>
+        meshShape(
+          candidate,
+          "imported-step",
+          importedAnchors(nextSessionHoles),
+        ),
+      (candidate) => {
+        sessionHoles = nextSessionHoles;
+        if (existingIndex < 0) nextSessionHoleNumber += 1;
+        replaceCurrentShape(candidate, "imported-step");
+      },
+    );
+    return {
+      id: request.id,
+      type: "mesh",
+      mesh,
+    };
   }
 
   if (request.snapshot) {
-    const result = buildBracket(request.snapshot);
-    clearImportedState();
-    bracketSnapshot = request.snapshot;
-    replaceCurrentShape(result, "bracket");
+    const snapshot = request.snapshot;
+    const result = buildBracket(snapshot);
+    const prepared = await commitPreparedResourceAsync(
+      result,
+      async (candidate) => ({
+        filename: "patchcad-bracket.step",
+        bytes: await candidate.blobSTEP().arrayBuffer(),
+      }),
+      (candidate) => {
+        clearImportedState();
+        bracketSnapshot = snapshot;
+        replaceCurrentShape(candidate, "bracket");
+      },
+    );
+    return {
+      id: request.id,
+      type: "step",
+      ...prepared,
+    };
   }
 
   if (!currentShape || !currentSource) {
@@ -508,49 +568,16 @@ function errorReply(id: string, error: unknown): CadWorkerReply {
   };
 }
 
+const dispatcher = createCadWorkerDispatcher({
+  handleRequest,
+  errorReply,
+  postReply(reply) {
+    workerScope.postMessage(reply, transferableReplyBuffers(reply));
+  },
+});
+
 workerScope.onmessage = (event) => {
-  const parsed = CadWorkerRequestSchema.safeParse(event.data);
-  const fallbackId = createCadWorkerRequestId();
-  const requestId =
-    typeof event.data === "object" &&
-    event.data !== null &&
-    "id" in event.data &&
-    typeof event.data.id === "string"
-      ? event.data.id
-      : fallbackId;
-
-  if (!parsed.success) {
-    const reply = errorReply(
-      fallbackId,
-      new CadKernelError(
-        "INVALID_REQUEST",
-        "The CAD worker rejected an invalid protocol message.",
-      ),
-    );
-    workerScope.postMessage(reply, []);
-    return;
-  }
-
-  if (seenRequestIds.has(requestId)) {
-    const reply = errorReply(
-      requestId,
-      new CadKernelError(
-        "DUPLICATE_REQUEST_ID",
-        "Each CAD worker request ID must be unique.",
-      ),
-    );
-    workerScope.postMessage(reply, []);
-    return;
-  }
-  seenRequestIds.add(requestId);
-
-  void handleRequest(parsed.data)
-    .then((reply) => {
-      workerScope.postMessage(reply, transferableReplyBuffers(reply));
-    })
-    .catch((error: unknown) => {
-      workerScope.postMessage(errorReply(requestId, error), []);
-    });
+  void dispatcher.dispatch(event.data);
 };
 
 export {};

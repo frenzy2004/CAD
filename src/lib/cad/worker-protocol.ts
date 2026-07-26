@@ -102,6 +102,30 @@ export const CadMeshSchema = z
       });
     }
 
+    let expectedFaceGroupStart = 0;
+    for (const [index, group] of mesh.faceGroups.entries()) {
+      if (
+        group.start % 3 !== 0 ||
+        group.count % 3 !== 0 ||
+        group.start !== expectedFaceGroupStart
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["faceGroups", index],
+          message:
+            "Face groups must be triangle-aligned contiguous ranges in index order",
+        });
+      }
+      expectedFaceGroupStart = group.start + group.count;
+    }
+    if (expectedFaceGroupStart !== mesh.indices.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["faceGroups"],
+        message: "Face groups must cover the complete triangle index stream",
+      });
+    }
+
     if (mesh.source === "bracket" && mesh.holeAnchors.length === 0) {
       context.addIssue({
         code: "custom",
@@ -224,8 +248,71 @@ export type CadWorkerCommand = CadWorkerRequest extends infer Request
     : never
   : never;
 
+export type CadWorkerDispatcher = {
+  dispatch(message: unknown): Promise<void>;
+};
+
+type CadWorkerDispatcherOptions = {
+  handleRequest(request: CadWorkerRequest): Promise<CadWorkerReply>;
+  postReply(reply: CadWorkerReply): void;
+  errorReply(id: string, error: unknown): CadWorkerReply;
+};
+
 export function createCadWorkerRequestId(): string {
   return crypto.randomUUID();
+}
+
+export function createCadWorkerDispatcher({
+  handleRequest,
+  postReply,
+  errorReply,
+}: CadWorkerDispatcherOptions): CadWorkerDispatcher {
+  const seenRequestIds = new Set<string>();
+  let serialOperations = Promise.resolve();
+
+  return {
+    dispatch(message) {
+      const suppliedId =
+        typeof message === "object" &&
+        message !== null &&
+        "id" in message &&
+        RequestIdSchema.safeParse(message.id).success
+          ? (message.id as string)
+          : null;
+      const parsed = CadWorkerRequestSchema.safeParse(message);
+
+      if (!parsed.success) {
+        postReply({
+          id: suppliedId ?? createCadWorkerRequestId(),
+          type: "error",
+          code: "INVALID_REQUEST",
+          message: "The CAD worker rejected an invalid protocol message.",
+        });
+        return Promise.resolve();
+      }
+
+      if (seenRequestIds.has(parsed.data.id)) {
+        postReply({
+          id: parsed.data.id,
+          type: "error",
+          code: "DUPLICATE_REQUEST_ID",
+          message: "Each CAD worker request ID must be unique.",
+        });
+        return Promise.resolve();
+      }
+      seenRequestIds.add(parsed.data.id);
+
+      const operation = serialOperations.then(async () => {
+        try {
+          postReply(await handleRequest(parsed.data));
+        } catch (error) {
+          postReply(errorReply(parsed.data.id, error));
+        }
+      });
+      serialOperations = operation.catch(() => undefined);
+      return operation;
+    },
+  };
 }
 
 export function transferableReplyBuffers(reply: CadWorkerReply): ArrayBuffer[] {

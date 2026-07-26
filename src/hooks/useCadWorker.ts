@@ -61,8 +61,27 @@ export function useCadWorker(): CadWorkerClient {
     pendingRef.current.clear();
   }, []);
 
+  const failWorker = useCallback(
+    (worker: Worker, error: Error) => {
+      if (workerRef.current !== worker) return;
+
+      worker.onmessage = null;
+      worker.onerror = null;
+      worker.terminate();
+      workerRef.current = null;
+      initializePromiseRef.current = null;
+      rejectPending(error);
+      updateState({ status: "error", progress: null, error: error.message });
+    },
+    [rejectPending, updateState],
+  );
+
   const terminate = useCallback(() => {
-    workerRef.current?.terminate();
+    if (workerRef.current) {
+      workerRef.current.onmessage = null;
+      workerRef.current.onerror = null;
+      workerRef.current.terminate();
+    }
     workerRef.current = null;
     initializePromiseRef.current = null;
     rejectPending(new Error("The CAD worker was terminated."));
@@ -86,8 +105,7 @@ export function useCadWorker(): CadWorkerClient {
         const error = new Error(
           "The CAD worker returned an invalid protocol message.",
         );
-        rejectPending(error);
-        updateState({ status: "error", progress: null, error: error.message });
+        failWorker(worker, error);
         return;
       }
 
@@ -111,13 +129,12 @@ export function useCadWorker(): CadWorkerClient {
 
     worker.onerror = (event) => {
       const error = new Error(event.message || "The CAD worker crashed.");
-      rejectPending(error);
-      updateState({ status: "error", progress: null, error: error.message });
+      failWorker(worker, error);
     };
 
     workerRef.current = worker;
     return worker;
-  }, [rejectPending, updateState]);
+  }, [failWorker, updateState]);
 
   const dispatch = useCallback(
     (request: CadWorkerRequest): Promise<CadWorkerReply> => {
@@ -130,16 +147,10 @@ export function useCadWorker(): CadWorkerClient {
 
       return new Promise<CadWorkerReply>((resolve, reject) => {
         const timeout = setTimeout(() => {
-          pendingRef.current.delete(request.id);
           const error = new Error(
             `CAD worker request timed out after ${CAD_WORKER_TIMEOUT_MS} ms.`,
           );
-          reject(error);
-          updateState({
-            status: "error",
-            progress: null,
-            error: error.message,
-          });
+          failWorker(worker, error);
         }, CAD_WORKER_TIMEOUT_MS);
 
         pendingRef.current.set(request.id, { resolve, reject, timeout });
@@ -148,7 +159,7 @@ export function useCadWorker(): CadWorkerClient {
         worker.postMessage(request, transfers ?? []);
       });
     },
-    [ensureWorker, updateState],
+    [ensureWorker, failWorker],
   );
 
   const initialize = useCallback((): Promise<void> => {
@@ -203,7 +214,11 @@ export function useCadWorker(): CadWorkerClient {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      workerRef.current?.terminate();
+      if (workerRef.current) {
+        workerRef.current.onmessage = null;
+        workerRef.current.onerror = null;
+        workerRef.current.terminate();
+      }
       workerRef.current = null;
       initializePromiseRef.current = null;
       rejectPending(new Error("The CAD worker component was unmounted."));

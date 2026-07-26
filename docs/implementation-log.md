@@ -15,6 +15,46 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Honest offline patch parser
+
+- Branch/commit: `agent/patchcad-foundation` Task 4 worktree
+- Attempt: Add a small, pure local grammar for one selected-hole resize or one top-face point add-hole command, with millimetre and inch dimensions, strict selection handling, and explicit local provenance.
+- Result: worked
+- Evidence: The new parser suite was RED because `@/lib/cad/local-parser` did not exist. After the minimal parser was added, a second RED showed that dimensionless recognized commands returned `UNSUPPORTED_OPERATION` rather than `MISSING_DIMENSION`; the parser was tightened and `npm test -- tests/unit/local-parser.test.ts` passed 12 tests. The suite includes `1/4 inch` converting to exactly `6.35 mm`, harmless capitalization/whitespace, and fail-closed errors for incomplete, non-positive, multi-operation, unsupported, and ambiguous-selection commands. `npm run typecheck` exited 0.
+- Carry-forward rule: Use this parser only as the explicit `local-parser` offline path after an `AI_NOT_CONFIGURED` server response; never label it as a provider result, and reject a prompt or selection whenever it cannot identify exactly one safe operation and target.
+
+### 2026-07-26 — Git push network permission route
+
+- Branch/commit: `agent/patchcad-foundation` foundation handoff
+- Attempt: Push the foundation branch to its remote.
+- Result: worked after escalation
+- Evidence: The initial `git push` failed under restricted DNS. The approved `git push` escalation succeeded.
+- Carry-forward rule: Later network writes for this repository require the approved git-push escalation route; do not retry restricted DNS pushes as if they were authentication failures.
+
+### 2026-07-26 — Task 3 retry after interrupted no-op
+
+- Branch/commit: `agent/patchcad-foundation` at `e904f2f`
+- Attempt: Restart deterministic patch-engine Task 3 after the previously dispatched agent was interrupted.
+- Result: failed
+- Evidence: The branch remained at the Task 2 contract commit and contained no Task 3 source, test, or documentation changes to preserve.
+- Carry-forward rule: Treat this as a clean TDD retry; record fresh RED and GREEN evidence rather than inferring progress from the interrupted attempt.
+
+### 2026-07-26 — Deterministic local patch engine
+
+- Branch/commit: `agent/patchcad-foundation` after `e904f2f`
+- Attempt: Build a pure semantic-ID patch engine and locality verifier with behavior-first tests for selected resize, top-face addition, validation rejections, protected fingerprints, tolerance, and immutable undo snapshots.
+- Result: worked
+- Evidence: The add-only selection contract test first failed because `editableFeatureIds` required one ID, then passed after allowing an empty feature list for a face-only envelope. The new patch test first failed on the missing modules, and the final `npm test` passed 25 tests; `npm run typecheck` and `npm run lint` exited 0.
+- Carry-forward rule: Keep face-only add-hole authorization distinct from semantic feature authorization; generate new IDs deterministically and compare only fingerprints during locality checks, never array positions.
+
+### 2026-07-26 — Task 3 Fix Round 1: no-effect and exact locality boundaries
+
+- Branch/commit: `agent/patchcad-foundation` after `2c09f4d`
+- Attempt: Correct same-diameter resize success reporting and the fingerprint tolerance comparator; add a resize wall regression.
+- Result: worked
+- Evidence: The same-diameter plan test was RED with `{ valid: true }`, then GREEN after `NO_EFFECT` validation and removal of the forced `targetChanged: true`. The immediate-above tolerance test at `0.000100004 mm` was RED, then GREEN with an unrounded absolute-delta comparison. The resize-wall assertion was mutation-checked RED when wall validation was temporarily disabled, then GREEN after restoration. Targeted tests passed 14 tests and type checking exited 0.
+- Carry-forward rule: A plan that does not change a target must reject before patching, and tolerance comparisons must use the exact unrounded geometry delta.
+
 ### 2026-07-26 — Repository and local runtime
 
 - Branch/commit: `agent/patchcad-design` at `4900d80`
@@ -78,3 +118,59 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: partial
 - Evidence: `OPENAI_API_KEY`, `EXA_API_KEY`, and `VERCEL_TOKEN` are unset in the current shell.
 - Carry-forward rule: Never reproduce user-supplied credentials in a tool argument, file, log, or command. Use secure interactive Vercel input if available; otherwise deploy the honest offline CAD path and report the exact server-only variable names still requiring secure configuration.
+
+### 2026-07-26 — Superpowers helper script permissions
+
+- Branch/commit: controller before `agent/patchcad-foundation`
+- Attempt: The controller initially invoked the Superpowers helper scripts without their user execute bits, then set the user execute bits and retried.
+- Result: worked
+- Evidence: The initial invocation was blocked by missing execute permission; the controller-confirmed retry worked after the permission correction.
+- Carry-forward rule: Check helper-script execute permission before invoking a newly created or checked-out Superpowers workflow.
+
+### 2026-07-26 — Vercel authentication discovery
+
+- Branch/commit: controller before `agent/patchcad-foundation`
+- Attempt: Run `npx vercel@latest whoami` to confirm deployment authentication.
+- Result: partial
+- Evidence: The command installed Vercel CLI 57.0.0, found no credentials, and entered a device-login flow that the controller cancelled. No device code or token was retained.
+- Carry-forward rule: Production deployment tooling requires Vercel authentication or the connected deploy tool; never record a transient device code or token.
+
+### 2026-07-26 — Vercel-ready web scaffold
+
+- Branch/commit: `agent/patchcad-foundation` (this scaffold commit)
+- Attempt: Install the exact pinned Next.js/CAD dependencies; configure the App Router, Vitest, Playwright, Vercel ignores, Webpack browser fallbacks, and the pinned OpenCascade WASM copier.
+- Result: worked
+- Evidence: `npm test -- tests/unit/page.test.tsx` passed (1 test); `npm run typecheck`, `npm run lint`, and `npm run build` passed. The build copied and served the versioned WASM artifact, and a byte comparison matched it to `replicad-opencascadejs`'s pinned source. With that source temporarily unavailable, `node scripts/copy-cad-runtime.mjs` exited 1 with an explicit `npm ci`/no-download-or-compile message; the source was restored immediately.
+- Carry-forward rule: Keep `/cad-runtime/replicad_single-0.23.0.wasm` as a build-time copy of the lockfile-pinned package artifact. Do not enable pthreads or cross-origin isolation in this milestone.
+
+### 2026-07-26 — Schema smoke-test handoff
+
+- Branch/commit: `agent/patchcad-foundation` (this scaffold commit)
+- Attempt: Run the required temporary schema smoke test before the CAD schema module exists.
+- Result: worked
+- Evidence: `npm test -- tests/unit/schemas.test.ts` exited 1 with `Failed to resolve import "@/lib/cad/schemas"`, as intended.
+- Carry-forward rule: The CAD-schema task must add `src/lib/cad/schemas` and make this test green; until then, the full Vitest suite is intentionally red.
+
+### 2026-07-26 — Dependency installation advisories
+
+- Branch/commit: `agent/patchcad-foundation` (this scaffold commit)
+- Attempt: Install the exact pinned runtime and development dependency lists with npm 11.
+- Result: partial
+- Evidence: npm installed the requested packages and the production build passed, while reporting 12 high-severity transitive audit advisories and pending install-script approval for `sharp` and `unrs-resolver`.
+- Carry-forward rule: Do not run automatic or breaking audit upgrades and do not approve install scripts without a reviewed dependency decision; resolve advisories in a dedicated dependency-maintenance task while preserving the required pins.
+
+### 2026-07-26 — Shared CAD contract RED state
+
+- Branch/commit: `agent/patchcad-foundation` before the Task 2 contract implementation
+- Attempt: Replace the temporary schema smoke test with behavioral validation tests, then run `npm test -- tests/unit/schemas.test.ts` before adding the schema module.
+- Result: worked
+- Evidence: Vitest exited 1 with `Failed to resolve import "@/lib/cad/schemas"`; no test cases ran because the required module did not yet exist.
+- Carry-forward rule: Keep contract tests focused on runtime boundary behavior and run them while RED before adding or changing production schemas.
+
+### 2026-07-26 — Shared CAD and AI contracts
+
+- Branch/commit: `agent/patchcad-foundation` Task 2 worktree
+- Attempt: Implement strict Zod 4.4.3 schemas for the versioned bracket snapshot, local patch operations, selection and verification payloads, plan API payloads, and public research payloads; centralize millimetre and safety bounds.
+- Result: worked
+- Evidence: `npm test -- tests/unit/schemas.test.ts` passed 11 tests, and `npm run typecheck` exited 0.
+- Carry-forward rule: Treat all untrusted CAD, plan, and research payloads as strict millimetre-only boundaries; use `PatchPlanSchema` as the only accepted executable intent and keep provider credentials out of every shared contract and response type.

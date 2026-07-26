@@ -29,3 +29,7 @@ Fresh verification:
 
 - `npm test -- tests/integration/api-research.test.ts` — 4 passed
 - `npm run typecheck` — passed
+
+## Provider integration build fix
+
+The plan route exposed an invalid factory export during the Next 16 production build, and inspection confirmed `src/app/api/research/route.ts` had the same unsupported `createResearchRoute` export. The route-surface regression was RED for both modules. The research factory now lives in `src/server/exa/research-route.ts`; the App Router module exports only `POST`, and provider behavior remains tested through the injected server factory. The exact `npm run build` then completed and emitted `/api/research` as a dynamic route.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createResearchRoute } from "@/app/api/research/route";
+import { createResearchRoute } from "@/server/exa/research-route";
 import { ResearchService, type ExaAdapter } from "@/server/exa/research-service";
 
 function createHandler(adapter?: ExaAdapter) {

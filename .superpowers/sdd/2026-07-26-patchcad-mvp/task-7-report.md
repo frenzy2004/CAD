@@ -28,3 +28,7 @@ Fresh verification after both fixes:
 
 - `npm test -- tests/integration/api-plan.test.ts` — 14 passed
 - `npm run typecheck` — passed
+
+## Provider integration build fix
+
+The production build compiled but failed Next 16 route type checking because `src/app/api/plan/route.ts` exported the injectable `createPlanRoute` factory. A focused route-surface regression was RED on that invalid export. The factory now lives in `src/server/openai/plan-route.ts`; the App Router module exports only `POST`, while integration tests retain dependency injection through the server module. The exact `npm run build` then completed and emitted `/api/plan` as a dynamic route.

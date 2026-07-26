@@ -15,6 +15,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Provider route integration build fix
+
+- Branch/commit: `agent/patchcad-providers` after `b4af09e`
+- Attempt: Reproduce and fix the Next 16 production-build failure caused by unsupported exports from App Router route modules.
+- Result: worked
+- Evidence: `npm run build` compiled, then failed Next route type checking because `src/app/api/plan/route.ts` exported `createPlanRoute`; the research route exposed the same invalid factory pattern. A focused route-surface test was RED for `createPlanRoute` and `createResearchRoute`, then GREEN after moving both injectable factories to server-only provider modules. The exact production build subsequently completed and emitted dynamic `/api/plan` and `/api/research` routes.
+- Carry-forward rule: Files under `src/app/**/route.ts` may export only supported HTTP handlers and Next route configuration fields. Keep testable dependency-injected handler factories in server modules outside the App Router route-file surface.
+
 ### 2026-07-26 — OpenAI structured local patch planning
 
 - Branch/commit: `agent/patchcad-providers` Task 7

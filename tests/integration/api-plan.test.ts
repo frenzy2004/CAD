@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import bracketContext from "../fixtures/bracket-context.json";
-import { createPlanRoute } from "@/app/api/plan/route";
+import { createPlanRoute } from "@/server/openai/plan-route";
 import { PlanService, type OpenAIModelAdapter } from "@/server/openai/plan-service";
 
 const requestBody = {

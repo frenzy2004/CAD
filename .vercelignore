@@ -1,0 +1,9 @@
+tests/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+*.py[cod]

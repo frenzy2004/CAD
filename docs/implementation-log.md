@@ -78,3 +78,43 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: partial
 - Evidence: `OPENAI_API_KEY`, `EXA_API_KEY`, and `VERCEL_TOKEN` are unset in the current shell.
 - Carry-forward rule: Never reproduce user-supplied credentials in a tool argument, file, log, or command. Use secure interactive Vercel input if available; otherwise deploy the honest offline CAD path and report the exact server-only variable names still requiring secure configuration.
+
+### 2026-07-26 — Superpowers helper script permissions
+
+- Branch/commit: controller before `agent/patchcad-foundation`
+- Attempt: The controller initially invoked the Superpowers helper scripts without their user execute bits, then set the user execute bits and retried.
+- Result: worked
+- Evidence: The initial invocation was blocked by missing execute permission; the controller-confirmed retry worked after the permission correction.
+- Carry-forward rule: Check helper-script execute permission before invoking a newly created or checked-out Superpowers workflow.
+
+### 2026-07-26 — Vercel authentication discovery
+
+- Branch/commit: controller before `agent/patchcad-foundation`
+- Attempt: Run `npx vercel@latest whoami` to confirm deployment authentication.
+- Result: partial
+- Evidence: The command installed Vercel CLI 57.0.0, found no credentials, and entered a device-login flow that the controller cancelled. No device code or token was retained.
+- Carry-forward rule: Production deployment tooling requires Vercel authentication or the connected deploy tool; never record a transient device code or token.
+
+### 2026-07-26 — Vercel-ready web scaffold
+
+- Branch/commit: `agent/patchcad-foundation` (this scaffold commit)
+- Attempt: Install the exact pinned Next.js/CAD dependencies; configure the App Router, Vitest, Playwright, Vercel ignores, Webpack browser fallbacks, and the pinned OpenCascade WASM copier.
+- Result: worked
+- Evidence: `npm test -- tests/unit/page.test.tsx` passed (1 test); `npm run typecheck`, `npm run lint`, and `npm run build` passed. The build copied and served the versioned WASM artifact, and a byte comparison matched it to `replicad-opencascadejs`'s pinned source. With that source temporarily unavailable, `node scripts/copy-cad-runtime.mjs` exited 1 with an explicit `npm ci`/no-download-or-compile message; the source was restored immediately.
+- Carry-forward rule: Keep `/cad-runtime/replicad_single-0.23.0.wasm` as a build-time copy of the lockfile-pinned package artifact. Do not enable pthreads or cross-origin isolation in this milestone.
+
+### 2026-07-26 — Schema smoke-test handoff
+
+- Branch/commit: `agent/patchcad-foundation` (this scaffold commit)
+- Attempt: Run the required temporary schema smoke test before the CAD schema module exists.
+- Result: worked
+- Evidence: `npm test -- tests/unit/schemas.test.ts` exited 1 with `Failed to resolve import "@/lib/cad/schemas"`, as intended.
+- Carry-forward rule: The CAD-schema task must add `src/lib/cad/schemas` and make this test green; until then, the full Vitest suite is intentionally red.
+
+### 2026-07-26 — Dependency installation advisories
+
+- Branch/commit: `agent/patchcad-foundation` (this scaffold commit)
+- Attempt: Install the exact pinned runtime and development dependency lists with npm 11.
+- Result: partial
+- Evidence: npm installed the requested packages and the production build passed, while reporting 12 high-severity transitive audit advisories and pending install-script approval for `sharp` and `unrs-resolver`.
+- Carry-forward rule: Do not run automatic or breaking audit upgrades and do not approve install scripts without a reviewed dependency decision; resolve advisories in a dedicated dependency-maintenance task while preserving the required pins.

@@ -1,2 +1,35 @@
 .superpowers/
 .worktrees/
+
+# Local environment and Vercel state
+.env
+.env.*
+!.env.example
+.vercel/
+
+# JavaScript build and test outputs
+node_modules/
+.next/
+tsconfig.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+public/cad-runtime/
+
+# Python and FreeCAD temporary files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.FCStd1
+*.FCBak
+
+# Locally exported CAD artifacts
+exports/
+*.step
+*.stp
+*.iges
+*.igs
+*.brep
+*.stl

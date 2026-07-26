@@ -114,7 +114,11 @@ function FeatureProjection({ anchors, onChange }: FeatureProjectionProps) {
     }),
     [],
   );
-  const previousSignature = useRef("");
+  const previousSignature = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    previousSignature.current = null;
+  }, [anchors, onChange]);
 
   useFrame(({ camera, size }) => {
     const projected: ProjectedFeatureAnchor[] = [];
@@ -297,7 +301,7 @@ export function Scene({
         minDistance={Math.max(gridSize * 0.08, 1)}
         ref={onOrbitControlsChange}
       />
-      <Bounds clip fit margin={1.25} observe>
+      <Bounds clip fit margin={1.25} maxDuration={0} observe>
         <group>
           <CadModel geometry={geometry} />
           <SelectedFeatureHighlight anchor={selectedAnchor} />

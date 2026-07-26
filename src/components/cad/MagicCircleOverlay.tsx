@@ -42,6 +42,7 @@ export function MagicCircleOverlay({
   onSelect,
 }: MagicCircleOverlayProps) {
   const interactionSurface = useRef<HTMLDivElement>(null);
+  const activePointerId = useRef<number | null>(null);
   const [activeDrawing, setActiveDrawing] =
     useState<ActiveDrawing | null>(null);
   const [circle, setCircle] = useState<ScreenCircle | null>(null);
@@ -53,19 +54,21 @@ export function MagicCircleOverlay({
     }
   }, []);
 
-  const cancel = useCallback(() => {
-    if (activeDrawing !== null) {
-      releasePointer(activeDrawing.pointerId);
+  const cancel = useCallback((releaseCapture = true) => {
+    const pointerId = activePointerId.current;
+    activePointerId.current = null;
+    if (releaseCapture && pointerId !== null) {
+      releasePointer(pointerId);
     }
     setActiveDrawing(null);
     setCircle(null);
     onDrawingChange(false);
     onSelect(null);
-  }, [activeDrawing, onDrawingChange, onSelect, releasePointer]);
+  }, [onDrawingChange, onSelect, releasePointer]);
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
     if (
-      activeDrawing !== null ||
+      activePointerId.current !== null ||
       !event.isPrimary ||
       event.button !== 0 ||
       event.altKey
@@ -81,6 +84,7 @@ export function MagicCircleOverlay({
     );
 
     event.currentTarget.setPointerCapture(event.pointerId);
+    activePointerId.current = event.pointerId;
     setActiveDrawing({ pointerId: event.pointerId, center });
     setCircle(
       circleFromPointerDrag(
@@ -93,7 +97,12 @@ export function MagicCircleOverlay({
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
-    if (activeDrawing?.pointerId !== event.pointerId) return;
+    if (
+      activePointerId.current !== event.pointerId ||
+      activeDrawing?.pointerId !== event.pointerId
+    ) {
+      return;
+    }
 
     event.preventDefault();
     const current = clientPointToCanvasPoint(
@@ -110,7 +119,12 @@ export function MagicCircleOverlay({
   }
 
   function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
-    if (activeDrawing?.pointerId !== event.pointerId) return;
+    if (
+      activePointerId.current !== event.pointerId ||
+      activeDrawing?.pointerId !== event.pointerId
+    ) {
+      return;
+    }
 
     event.preventDefault();
     const current = clientPointToCanvasPoint(
@@ -123,6 +137,7 @@ export function MagicCircleOverlay({
       MINIMUM_CIRCLE_RADIUS_PX,
     );
 
+    activePointerId.current = null;
     releasePointer(event.pointerId);
     setCircle(completedCircle);
     setActiveDrawing(null);
@@ -133,8 +148,13 @@ export function MagicCircleOverlay({
   }
 
   function handlePointerCancel(event: PointerEvent<HTMLDivElement>) {
-    if (activeDrawing?.pointerId !== event.pointerId) return;
+    if (activePointerId.current !== event.pointerId) return;
     cancel();
+  }
+
+  function handleLostPointerCapture(event: PointerEvent<HTMLDivElement>) {
+    if (activePointerId.current !== event.pointerId) return;
+    cancel(false);
   }
 
   return (
@@ -147,6 +167,7 @@ export function MagicCircleOverlay({
           cancel();
         }
       }}
+      onLostPointerCapture={handleLostPointerCapture}
       onPointerCancel={handlePointerCancel}
       onPointerDownCapture={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -175,7 +196,7 @@ export function MagicCircleOverlay({
       </svg>
       <p
         aria-live="polite"
-        className="pointer-events-none absolute bottom-3 left-3 m-0 max-w-[calc(100%-1.5rem)] rounded-md border border-white/10 bg-slate-950/85 px-3 py-2 text-sm text-slate-100 shadow-lg backdrop-blur"
+        className="pointer-events-none absolute bottom-3 left-3 m-0 max-w-[calc(100%_-_1.5rem)] rounded-md border border-white/10 bg-slate-950/85 px-3 py-2 text-sm text-slate-100 shadow-lg backdrop-blur"
         role="status"
       >
         {statusText}

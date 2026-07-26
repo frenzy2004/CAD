@@ -1,6 +1,7 @@
 import "server-only";
 
 import { ResearchRequestSchema } from "@/lib/cad/schemas";
+import { readBoundedJson } from "@/server/http/read-bounded-json";
 import { ResearchService } from "./research-service";
 
 function errorResponse(code: string, status: number): Response {
@@ -11,7 +12,7 @@ export function createResearchRoute(service: ResearchService) {
   return async function POST(request: Request): Promise<Response> {
     let json: unknown;
     try {
-      json = await request.json();
+      json = await readBoundedJson(request);
     } catch {
       return errorResponse("INVALID_REQUEST", 400);
     }

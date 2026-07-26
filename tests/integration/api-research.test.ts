@@ -121,4 +121,38 @@ describe("POST /api/research", () => {
     expect(body).not.toContain("exa-test-key");
     expect(body).not.toContain("Authorization");
   });
+
+  it("rejects a body whose declared size exceeds the provider route limit", async () => {
+    const request = post({ query: "bracket datasheet" });
+    request.headers.set("content-length", "70000");
+    const response = await createHandler({
+      searchAndContents: async () => {
+        throw new Error("provider must not be called for an oversized request");
+      },
+    })(request);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: { code: "INVALID_REQUEST" } });
+  });
+
+  it.each([
+    ["a missing Content-Length", undefined],
+    ["a falsified Content-Length", "10"],
+  ])("bounds actual research body bytes with %s", async (_name, length) => {
+    const request = new Request("http://localhost/api/research", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: `${" ".repeat(70_000)}{"query":"bracket datasheet"}`,
+    });
+    if (length) request.headers.set("content-length", length);
+
+    const response = await createHandler({
+      searchAndContents: async () => {
+        throw new Error("provider must not be called for an oversized request");
+      },
+    })(request);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: { code: "INVALID_REQUEST" } });
+  });
 });

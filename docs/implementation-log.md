@@ -15,6 +15,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Research route actual-byte bound
+
+- Branch/commit: `agent/patchcad-integration` provider hardening
+- Attempt: Apply the existing streaming 64 KiB JSON reader consistently to the Exa route instead of trusting `request.json()`.
+- Result: worked
+- Evidence: Three regressions were RED with `502`: a declared 70,000-byte body and valid JSON padded beyond 64 KiB with missing or falsified `Content-Length` all reached the Exa adapter. The research handler now uses `readBoundedJson`; all 7 focused tests pass and the adapter is never reached for those bodies. Typecheck and lint pass.
+- Carry-forward rule: Every provider route must cap actual stream bytes independently of `Content-Length`; schema size limits do not protect the server from oversized-but-valid JSON framing.
+
 ### 2026-07-26 — Exact STEP and audit download boundary
 
 - Branch/commit: `agent/patchcad-integration` Task 10 partial

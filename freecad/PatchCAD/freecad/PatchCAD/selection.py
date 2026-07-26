@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib
 import math
-from typing import Literal
+from typing import Callable, Literal
 
 from .protocol import PatchRequest
 
@@ -86,6 +86,8 @@ def _validate_planar(face: object) -> tuple[float, float, float]:
 
 def _validate_inward_full_cylinder(
     face: object,
+    source_shape: object | None = None,
+    vector_factory: Callable[[float, float, float], object] | None = None,
 ) -> tuple[tuple[float, float, float], float]:
     if "cylinder" not in _surface_kind(face):
         raise SelectionError("resize_hole requires one cylindrical face")
@@ -94,6 +96,22 @@ def _validate_inward_full_cylinder(
         raise SelectionError("partial cylindrical faces cannot be resized")
 
     surface = face.Surface  # type: ignore[attr-defined]
+    radius = float(surface.Radius)
+    axial_span = abs(float(v_max) - float(v_min))
+    expected_area = 2 * math.pi * radius * axial_span
+    wires = list(getattr(face, "Wires", ()))
+    actual_area = float(getattr(face, "Area", math.nan))
+    if (
+        len(wires) != 1
+        or not math.isfinite(radius)
+        or radius <= 0
+        or not math.isfinite(axial_span)
+        or axial_span <= 0
+        or not math.isfinite(actual_area)
+        or not math.isclose(actual_area, expected_area, rel_tol=1e-7, abs_tol=1e-7)
+    ):
+        raise SelectionError("resize_hole requires one untrimmed full cylindrical wall")
+
     axis = _normalized(surface.Axis)
     center = _tuple(surface.Center)
     u_mid, v_mid = (u_min + u_max) / 2, (v_min + v_max) / 2
@@ -104,7 +122,34 @@ def _validate_inward_full_cylinder(
     radial = tuple(offset[index] - axial * axis[index] for index in range(3))
     if sum(normal[index] * radial[index] for index in range(3)) >= -1e-7:
         raise SelectionError("outward cylindrical bosses cannot be resized")
-    return axis, 2.0 * float(surface.Radius)
+    if (
+        source_shape is None
+        or vector_factory is None
+        or len(list(getattr(source_shape, "Solids", ()))) != 1
+        or not callable(getattr(source_shape, "isInside", None))
+    ):
+        raise SelectionError("resize_hole requires a demonstrably open through-hole")
+
+    lower, upper = sorted((float(v_min), float(v_max)))
+    probe_offset = max(1e-5, min(radius, axial_span) * 1e-6)
+    probe_parameters = (lower - probe_offset, upper + probe_offset)
+    try:
+        for parameter in probe_parameters:
+            coordinates = tuple(
+                center[index] + axis[index] * parameter for index in range(3)
+            )
+            probe = vector_factory(*coordinates)
+            if source_shape.isInside(probe, 1e-7, True):  # type: ignore[attr-defined]
+                raise SelectionError(
+                    "resize_hole requires a through-hole open at both axial ends"
+                )
+    except SelectionError:
+        raise
+    except Exception as exc:
+        raise SelectionError(
+            "resize_hole could not verify both through-hole openings"
+        ) from exc
+    return axis, 2.0 * radius
 
 
 def _hole_wall_bounds(
@@ -149,7 +194,12 @@ def validate_target(
             raise SelectionError("add_hole point must lie on the selected planar face")
         original_diameter = 0.0
     else:
-        axis, original_diameter = _validate_inward_full_cylinder(face)
+        app = importlib.import_module("FreeCAD")
+        axis, original_diameter = _validate_inward_full_cylinder(
+            face,
+            source.Shape,  # type: ignore[attr-defined]
+            app.Vector,
+        )
         point = _tuple(face.CenterOfMass)
         fill_min, fill_max = _hole_wall_bounds(face, point, axis)
     cutter_min, cutter_max = _cutter_bounds(source, point, axis)

@@ -17,6 +17,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## FreeCAD workstream
 
+### 2026-07-26 19:17 +08 — Task 11 Fix Round 1 geometry and recompute gates
+
+- Branch/commit: `agent/patchcad-freecad` after `7673f0e`
+- Attempt: Reproduce and correct exterior sleeves in shrink-hole fills and stale-shape commits after failed FeaturePython recomputes.
+- Result: worked
+- Evidence: Three initial seam tests were RED: the discrete geometry result retained `exterior-sleeve`, and update/toggle mutations committed despite a non-advancing execution token or `Invalid` state. Exact hole-wall axial fill bounds made the geometry seam GREEN. A persisted execution counter was rejected before commit because mutating it inside `execute()` would add saved-state side effects; two additional RED seams required a Proxy-local token and successful commit after that transient token advanced. `PatchFeature.execute()` now advances the transient token only after assigning a fresh shape, while the service checks recompute count, object error state, `isValid()`, token advancement, and one-solid shape validity before commit.
+- Carry-forward rule: Never use over-travelled cutter bounds for additive material. Keep freshness bookkeeping transient on the FeaturePython Proxy, and abort/recompute the transaction whenever recompute does not prove a fresh valid shape.
+
 ### 2026-07-26 18:54 +08 — PatchCAD FreeCAD bridge RED and sandbox boundary
 
 - Branch/commit: `agent/patchcad-freecad` before Task 11 commit

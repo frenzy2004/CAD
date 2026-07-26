@@ -24,6 +24,8 @@ class SelectionTarget:
     axis: tuple[float, float, float]
     cutter_min: float
     cutter_max: float
+    fill_min: float
+    fill_max: float
     original_diameter_mm: float
     source: object
 
@@ -105,6 +107,24 @@ def _validate_inward_full_cylinder(
     return axis, 2.0 * float(surface.Radius)
 
 
+def _hole_wall_bounds(
+    face: object,
+    point: tuple[float, float, float],
+    axis: tuple[float, float, float],
+) -> tuple[float, float]:
+    u_min, u_max, v_min, v_max = face.ParameterRange  # type: ignore[attr-defined]
+    u_mid = (u_min + u_max) / 2
+    endpoints = (
+        _tuple(face.valueAt(u_mid, v_min)),  # type: ignore[attr-defined]
+        _tuple(face.valueAt(u_mid, v_max)),  # type: ignore[attr-defined]
+    )
+    projections = [
+        sum((endpoint[index] - point[index]) * axis[index] for index in range(3))
+        for endpoint in endpoints
+    ]
+    return min(projections), max(projections)
+
+
 def validate_target(
     source: object,
     subelement: str,
@@ -131,7 +151,10 @@ def validate_target(
     else:
         axis, original_diameter = _validate_inward_full_cylinder(face)
         point = _tuple(face.CenterOfMass)
+        fill_min, fill_max = _hole_wall_bounds(face, point, axis)
     cutter_min, cutter_max = _cutter_bounds(source, point, axis)
+    if operation == "add_hole":
+        fill_min, fill_max = cutter_min, cutter_max
     return SelectionTarget(
         document=source.Document.Name,  # type: ignore[attr-defined]
         object_name=source.Name,  # type: ignore[attr-defined]
@@ -141,6 +164,8 @@ def validate_target(
         axis=axis,
         cutter_min=cutter_min,
         cutter_max=cutter_max,
+        fill_min=fill_min,
+        fill_max=fill_max,
         original_diameter_mm=original_diameter,
         source=source,
     )

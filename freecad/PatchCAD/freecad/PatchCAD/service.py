@@ -50,6 +50,29 @@ def _patch_response(patch: object, *, idempotent: bool = False) -> dict[str, obj
     }
 
 
+def _execution_serial(patch: object) -> int:
+    proxy = getattr(patch, "Proxy", None)
+    serial = getattr(proxy, "execution_serial", None)
+    if not isinstance(serial, int):
+        raise PatchServiceError("PatchCAD feature has no transient execution token")
+    return serial
+
+
+def _recompute_fresh(document: object, patch: object, previous_serial: int) -> None:
+    recomputed = document.recompute()  # type: ignore[attr-defined]
+    if not isinstance(recomputed, int) or recomputed <= 0:
+        raise PatchServiceError("FreeCAD recompute did not execute the patch")
+    state = {str(value).lower() for value in getattr(patch, "State", ())}
+    if state.intersection({"invalid", "error"}):
+        raise PatchServiceError("FreeCAD recompute reported an invalid patch")
+    if hasattr(patch, "isValid") and not patch.isValid():
+        raise PatchServiceError("FreeCAD recompute reported an invalid patch")
+    if _execution_serial(patch) <= previous_serial:
+        raise PatchServiceError("FreeCAD recompute did not produce a fresh patch shape")
+    if not valid_one_solid(patch.Shape):  # type: ignore[attr-defined]
+        raise PatchServiceError("patch did not produce one valid solid")
+
+
 class PatchService:
     def dispatch(self, action: str, payload: object) -> object:
         if action == "selection":
@@ -91,9 +114,7 @@ class PatchService:
                 request_id=request.request_id,
                 audit_id=audit_id,
             )
-            document.recompute()
-            if not valid_one_solid(patch.Shape):
-                raise PatchServiceError("patch did not produce one valid solid")
+            _recompute_fresh(document, patch, 0)
             if hasattr(target.source, "ViewObject"):
                 target.source.ViewObject.Visibility = False
             document.commitTransaction()
@@ -160,14 +181,13 @@ class PatchService:
         audit_fields: dict[str, object],
     ) -> dict[str, object]:
         document = patch.Document  # type: ignore[attr-defined]
+        previous_serial = _execution_serial(patch)
         transaction_open = False
         try:
             document.openTransaction(label)
             transaction_open = True
             mutation()
-            document.recompute()
-            if not valid_one_solid(patch.Shape):  # type: ignore[attr-defined]
-                raise PatchServiceError("patch did not produce one valid solid")
+            _recompute_fresh(document, patch, previous_serial)
             document.commitTransaction()
             transaction_open = False
         except Exception:

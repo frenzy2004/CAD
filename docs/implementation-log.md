@@ -15,6 +15,54 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Parallel Next build lock collision
+
+- Branch/commit: `agent/patchcad-providers` verification gate
+- Attempt: Start a second production build while an independent reviewer was already building the same worktree.
+- Result: failed, then worked
+- Evidence: The second `npm run build` exited immediately with `Another next build process is already running`. The existing build completed and released `.next/lock`; an unchanged retry then compiled, type-checked, generated all pages, and emitted both provider routes successfully.
+- Carry-forward rule: Never run concurrent Next production builds in one worktree. Parallelize builds across isolated worktrees, or wait for the current worktree's `.next/lock` owner to finish before retrying.
+
+### 2026-07-26 — Provider route integration build fix
+
+- Branch/commit: `agent/patchcad-providers` after `b4af09e`
+- Attempt: Reproduce and fix the Next 16 production-build failure caused by unsupported exports from App Router route modules.
+- Result: worked
+- Evidence: `npm run build` compiled, then failed Next route type checking because `src/app/api/plan/route.ts` exported `createPlanRoute`; the research route exposed the same invalid factory pattern. A focused route-surface test was RED for `createPlanRoute` and `createResearchRoute`, then GREEN after moving both injectable factories to server-only provider modules. The exact production build subsequently completed and emitted dynamic `/api/plan` and `/api/research` routes.
+- Carry-forward rule: Files under `src/app/**/route.ts` may export only supported HTTP handlers and Next route configuration fields. Keep testable dependency-injected handler factories in server modules outside the App Router route-file surface.
+
+### 2026-07-26 — OpenAI structured local patch planning
+
+- Branch/commit: `agent/patchcad-providers` Task 7
+- Attempt: Add a server-only Responses API adapter using `responses.parse` and `zodTextFormat`, with an injected adapter boundary and deterministic plan validation before any OpenAI provenance is returned.
+- Result: worked
+- Evidence: The integration suite was RED on the missing route, then passed 9 behavior cases covering validated plans, malformed provider output, refusal, incomplete output, protected targets, missing configuration, malformed/oversized requests, and secret-free error envelopes. `npm run typecheck` exited 0.
+- Carry-forward rule: The installed OpenAI 6.49 SDK exposes parsed output at `response.output_parsed`; refusal must be detected from `message` output content with `type: "refusal"`, and every parsed plan must still pass `validatePlan`.
+
+### 2026-07-26 — Task 7 Fix Round 1: bounded requests and controlled rationale
+
+- Branch/commit: `agent/patchcad-providers` after `5c9a4d9`
+- Attempt: Prevent unbounded plan-route JSON consumption and prevent arbitrary model rationale from crossing the provider service boundary.
+- Result: worked
+- Evidence: Declared-oversize, missing-header, and falsified-header body tests were RED with `502` because the provider fake was reached, then GREEN with an early 64 KiB `Content-Length` check and an independent streaming byte cap. Resize and add-hole rationale tests were RED with executable model prose in the response, then GREEN after replacing it with operation-specific deterministic summaries. The focused suite passed 14 tests and type checking exited 0.
+- Carry-forward rule: All provider routes must bound bytes while reading, regardless of headers. Treat structured-output string fields as untrusted provider text; return only controlled local summaries derived from validated semantic and numeric fields.
+
+### 2026-07-26 — Exa-grounded component research
+
+- Branch/commit: `agent/patchcad-providers` Task 8
+- Attempt: Add a server-only Exa adapter and a route that returns bounded, normalized web evidence only, with canonical URL deduplication and safe upstream error handling.
+- Result: worked
+- Evidence: The route test was RED on the missing research route, then passed 4 behavior cases for constrained mounting-spec search, title/URL validation, canonical deduplication, five-source bounding, missing configuration, and redacted timeout failure. `npm run typecheck` exited 0.
+- Carry-forward rule: Exa 2.16 retains `searchAndContents` as a deprecated compatibility wrapper; it accepts the requested `{ type: "auto", numResults: 5, text: { maxCharacters } }` call shape. Keep results as evidence only; no Exa output may modify CAD geometry.
+
+### 2026-07-26 — Task 8 Fix Round 1: constrained Exa query composition
+
+- Branch/commit: `agent/patchcad-providers` after `714cc08`
+- Attempt: Prevent unrelated user research text from reaching Exa as the complete search query while preserving a single provider call and bounded growth.
+- Result: worked
+- Evidence: The adapter-boundary assertion was RED with the raw `M4 mounting bracket` query, then GREEN with an exact fixed composition that isolates the phrase as data and focuses retrieval on mounting-hole dimensions, bolt pattern, units, datasheets, and mechanical drawings. The focused suite passed 4 tests and type checking exited 0.
+- Carry-forward rule: Compose provider research queries from a fixed domain frame plus the bounded user phrase exactly once; treat user text as isolated search data, never as provider instructions.
+
 ### 2026-07-26 — Honest offline patch parser
 
 - Branch/commit: `agent/patchcad-foundation` Task 4 worktree

@@ -15,6 +15,22 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 — Honest offline patch parser
+
+- Branch/commit: `agent/patchcad-foundation` Task 4 worktree
+- Attempt: Add a small, pure local grammar for one selected-hole resize or one top-face point add-hole command, with millimetre and inch dimensions, strict selection handling, and explicit local provenance.
+- Result: worked
+- Evidence: The new parser suite was RED because `@/lib/cad/local-parser` did not exist. After the minimal parser was added, a second RED showed that dimensionless recognized commands returned `UNSUPPORTED_OPERATION` rather than `MISSING_DIMENSION`; the parser was tightened and `npm test -- tests/unit/local-parser.test.ts` passed 12 tests. The suite includes `1/4 inch` converting to exactly `6.35 mm`, harmless capitalization/whitespace, and fail-closed errors for incomplete, non-positive, multi-operation, unsupported, and ambiguous-selection commands. `npm run typecheck` exited 0.
+- Carry-forward rule: Use this parser only as the explicit `local-parser` offline path after an `AI_NOT_CONFIGURED` server response; never label it as a provider result, and reject a prompt or selection whenever it cannot identify exactly one safe operation and target.
+
+### 2026-07-26 — Git push network permission route
+
+- Branch/commit: `agent/patchcad-foundation` foundation handoff
+- Attempt: Push the foundation branch to its remote.
+- Result: worked after escalation
+- Evidence: The initial `git push` failed under restricted DNS. The approved `git push` escalation succeeded.
+- Carry-forward rule: Later network writes for this repository require the approved git-push escalation route; do not retry restricted DNS pushes as if they were authentication failures.
+
 ### 2026-07-26 — Task 3 retry after interrupted no-op
 
 - Branch/commit: `agent/patchcad-foundation` at `e904f2f`

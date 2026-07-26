@@ -55,6 +55,11 @@ class PatchRequest:
 def patch_request_fingerprint(request: PatchRequest) -> str:
     """Hash the normalized semantic request, independent of JSON spelling."""
 
+    point = (
+        [0.0 if coordinate == 0.0 else coordinate for coordinate in request.point]
+        if request.point is not None
+        else None
+    )
     canonical = {
         "request_id": request.request_id,
         "document": request.document,
@@ -62,7 +67,7 @@ def patch_request_fingerprint(request: PatchRequest) -> str:
         "subelement": request.subelement,
         "operation": request.operation,
         "diameter_mm": request.diameter_mm,
-        "point": list(request.point) if request.point is not None else None,
+        "point": point,
         "through_all": request.through_all,
         "units": "mm",
     }

@@ -221,6 +221,40 @@ class RunningBridgeTests(unittest.TestCase):
         self.assertEqual(second[2], first[2])
         self.assertEqual(len(self.dispatcher.calls), 1)
 
+    def test_semantically_equivalent_signed_zero_coordinates_replay(self):
+        negative_zero = {
+            "request_id": "req-signed-zero",
+            "object_name": "Body",
+            "subelement": "Face4",
+            "operation": "add_hole",
+            "diameter_mm": 8,
+            "point": [-0.0, 2.0, 3.0],
+            "units": "mm",
+        }
+        positive_zero = {
+            **negative_zero,
+            "point": [0.0, 2.0, 3.0],
+        }
+        self.dispatcher.result = {"patch_id": "patch-signed-zero"}
+
+        first = self.request(
+            "POST",
+            "/patches",
+            body=negative_zero,
+            headers=self.auth_headers(Origin=self.origin),
+        )
+        second = self.request(
+            "POST",
+            "/patches",
+            body=positive_zero,
+            headers=self.auth_headers(Origin=self.origin),
+        )
+
+        self.assertEqual(first[0], 201)
+        self.assertEqual(second[0], 200)
+        self.assertEqual(second[2], first[2])
+        self.assertEqual(len(self.dispatcher.calls), 1)
+
     def test_request_id_payload_conflict_returns_conflict(self):
         payload = {
             "request_id": "req-conflict",

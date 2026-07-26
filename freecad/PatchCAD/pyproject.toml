@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "freecad.PatchCAD"
+version = "0.1.0"
+description = "Verified, reversible local hole patches for FreeCAD"
+requires-python = ">=3.11"
+license = "MIT"
+
+[project.entry-points."freecad.modules"]
+PatchCAD = "freecad.PatchCAD.init"
+
+[project.entry-points."freecad.workbenches"]
+PatchCADWorkbench = "freecad.PatchCAD.init_gui:PatchCADWorkbench"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["freecad.PatchCAD*"]
+namespaces = true

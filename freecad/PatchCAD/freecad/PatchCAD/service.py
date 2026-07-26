@@ -1,0 +1,203 @@
+"""All FreeCAD document mutation, transaction, validation, and audit handling."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import importlib
+from pathlib import Path
+import uuid
+
+from .audit import AuditWriteError, write_audit_entry
+from .feature import attach_patch_feature, valid_one_solid
+from .protocol import PatchRequest
+from .selection import (
+    SelectionTarget,
+    current_selection_payload,
+    resolve_request,
+)
+
+
+class PatchServiceError(RuntimeError):
+    pass
+
+
+def _app():
+    return importlib.import_module("FreeCAD")
+
+
+def _quantity_value(value: object) -> float:
+    return float(getattr(value, "Value", value))
+
+
+def _find_patch(document: object, property_name: str, value: str):
+    for obj in document.Objects:  # type: ignore[attr-defined]
+        if getattr(obj, property_name, None) == value and hasattr(obj, "PatchId"):
+            return obj
+    return None
+
+
+def _patch_response(patch: object, *, idempotent: bool = False) -> dict[str, object]:
+    return {
+        "patch_id": patch.PatchId,  # type: ignore[attr-defined]
+        "request_id": patch.RequestId,  # type: ignore[attr-defined]
+        "audit_id": patch.AuditId,  # type: ignore[attr-defined]
+        "document": patch.Document.Name,  # type: ignore[attr-defined]
+        "object_name": patch.Name,  # type: ignore[attr-defined]
+        "operation": patch.Operation,  # type: ignore[attr-defined]
+        "diameter_mm": _quantity_value(patch.Diameter),  # type: ignore[attr-defined]
+        "enabled": bool(patch.Enabled),  # type: ignore[attr-defined]
+        "idempotent": idempotent,
+    }
+
+
+class PatchService:
+    def dispatch(self, action: str, payload: object) -> object:
+        if action == "selection":
+            return current_selection_payload()
+        if action == "create_patch" and isinstance(payload, PatchRequest):
+            return self.create_patch(payload)
+        if action == "update_diameter" and isinstance(payload, dict):
+            return self.update_diameter(str(payload["patch_id"]), float(payload["diameter_mm"]))
+        if action == "set_enabled" and isinstance(payload, dict):
+            return self.set_enabled(str(payload["patch_id"]), bool(payload["enabled"]))
+        raise PatchServiceError(f"unsupported dispatcher action: {action}")
+
+    def create_patch(
+        self, request: PatchRequest, target: SelectionTarget | None = None
+    ) -> dict[str, object]:
+        app = _app()
+        target = target or resolve_request(request)
+        document = target.source.Document
+        existing = _find_patch(document, "RequestId", request.request_id)
+        if existing is not None:
+            response = _patch_response(existing, idempotent=True)
+            response["audit_error"] = None
+            return response
+
+        patch_id = str(uuid.uuid4())
+        audit_id = str(uuid.uuid4())
+        patch = None
+        transaction_open = False
+        try:
+            document.openTransaction(f"PatchCAD {request.operation}")
+            transaction_open = True
+            patch = document.addObject("Part::FeaturePython", "PatchCADPatch")
+            patch.Label = f"PatchCAD {request.operation.replace('_', ' ')}"
+            attach_patch_feature(
+                patch,
+                target,
+                diameter_mm=request.diameter_mm,
+                patch_id=patch_id,
+                request_id=request.request_id,
+                audit_id=audit_id,
+            )
+            document.recompute()
+            if not valid_one_solid(patch.Shape):
+                raise PatchServiceError("patch did not produce one valid solid")
+            if hasattr(target.source, "ViewObject"):
+                target.source.ViewObject.Visibility = False
+            document.commitTransaction()
+            transaction_open = False
+        except Exception:
+            if transaction_open:
+                document.abortTransaction()
+            document.recompute()
+            raise
+
+        response = _patch_response(patch)
+        response["audit_error"] = self._write_audit(
+            document,
+            {
+                "audit_id": audit_id,
+                "request_id": request.request_id,
+                "patch_id": patch_id,
+                "operation": request.operation,
+                "diameter_mm": request.diameter_mm,
+                "source": {
+                    "document": target.document,
+                    "object_name": target.object_name,
+                    "subelement": target.subelement,
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return response
+
+    def update_diameter(self, patch_id: str, diameter_mm: float) -> dict[str, object]:
+        if diameter_mm <= 0:
+            raise PatchServiceError("diameter_mm must be positive")
+        patch = self._active_patch(patch_id)
+        return self._mutate_patch(
+            patch,
+            "Update PatchCAD diameter",
+            lambda: setattr(patch, "Diameter", diameter_mm),
+            {"operation": "update_diameter", "diameter_mm": diameter_mm},
+        )
+
+    def set_enabled(self, patch_id: str, enabled: bool) -> dict[str, object]:
+        patch = self._active_patch(patch_id)
+        return self._mutate_patch(
+            patch,
+            "Toggle PatchCAD patch",
+            lambda: setattr(patch, "Enabled", enabled),
+            {"operation": "set_enabled", "enabled": enabled},
+        )
+
+    def _active_patch(self, patch_id: str):
+        document = _app().ActiveDocument
+        if document is None:
+            raise PatchServiceError("no active FreeCAD document")
+        patch = _find_patch(document, "PatchId", patch_id)
+        if patch is None:
+            raise PatchServiceError(f"patch {patch_id!r} does not exist")
+        return patch
+
+    def _mutate_patch(
+        self,
+        patch: object,
+        label: str,
+        mutation,
+        audit_fields: dict[str, object],
+    ) -> dict[str, object]:
+        document = patch.Document  # type: ignore[attr-defined]
+        transaction_open = False
+        try:
+            document.openTransaction(label)
+            transaction_open = True
+            mutation()
+            document.recompute()
+            if not valid_one_solid(patch.Shape):  # type: ignore[attr-defined]
+                raise PatchServiceError("patch did not produce one valid solid")
+            document.commitTransaction()
+            transaction_open = False
+        except Exception:
+            if transaction_open:
+                document.abortTransaction()
+            document.recompute()
+            raise
+
+        entry = {
+            "audit_id": str(uuid.uuid4()),
+            "patch_id": patch.PatchId,  # type: ignore[attr-defined]
+            "request_id": patch.RequestId,  # type: ignore[attr-defined]
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **audit_fields,
+        }
+        response = _patch_response(patch)
+        response["audit_error"] = self._write_audit(document, entry)
+        return response
+
+    def _write_audit(
+        self, document: object, entry: dict[str, object]
+    ) -> dict[str, str] | None:
+        filename = str(getattr(document, "FileName", ""))
+        if not filename:
+            return {
+                "code": "AUDIT_WRITE_FAILED",
+                "message": "save the FreeCAD document before writing its external audit",
+            }
+        try:
+            write_audit_entry(Path(filename), entry)
+        except AuditWriteError as exc:
+            return {"code": "AUDIT_WRITE_FAILED", "message": str(exc)}
+        return None

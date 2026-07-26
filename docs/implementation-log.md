@@ -15,6 +15,32 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+## FreeCAD workstream
+
+### 2026-07-26 18:54 +08 — PatchCAD FreeCAD bridge RED and sandbox boundary
+
+- Branch/commit: `agent/patchcad-freecad` before Task 11 commit
+- Attempt: Add FreeCAD-independent behavior tests for the strict patch protocol, audit replacement, authenticated HTTP bridge, CORS/PNA, request bounds, GUI dispatch timeout, and request idempotency before creating production modules.
+- Result: worked, with one environment-dependent retry
+- Evidence: The required pure command first exited 1 with three expected `ModuleNotFoundError` errors for absent `protocol`, `audit`, and `bridge` modules. After the minimal implementation, the restricted sandbox rejected ephemeral loopback binds with `PermissionError: [Errno 1] Operation not permitted`; rerunning the same standard-library tests with approved loopback permission exposed one genuine failure (`500 != 413`) in the oversized-body response.
+- Carry-forward rule: Keep the bridge tests on real ephemeral `127.0.0.1` sockets. In this managed environment they require the approved `python3 -m unittest` loopback permission; do not replace them with handler mocks.
+
+### 2026-07-26 18:54 +08 — Pure bridge contract and fail-closed protocol
+
+- Branch/commit: `agent/patchcad-freecad` before Task 11 commit
+- Attempt: Implement strict millimetre-only request parsing, conflict-aware request-ID caching, atomic same-directory audit replacement, bearer-token HTTP routes, exact-origin CORS/PNA, body bounds, timeout mapping, and a queue drained only by a GUI-thread Qt timer.
+- Result: worked
+- Evidence: After mapping the body-limit exception to 413, all 20 initial pure tests passed. A later focused test proved that `through_all=false` was incorrectly accepted (RED: `ProtocolError not raised`); rejecting blind holes until a depth contract exists made that focused test GREEN. The complete pure suite then contains 21 tests.
+- Carry-forward rule: The current FreeCAD MVP supports through holes only. HTTP threads may enqueue and wait, but only the Qt timer callback may call selection or mutation services. Tokens remain random process memory, origins remain exact allowlist entries, and credentials/cookies/wildcards must not be introduced.
+
+### 2026-07-26 18:54 +08 — Reversible FreeCAD adapter and missing runtime
+
+- Branch/commit: `agent/patchcad-freecad` before Task 11 commit
+- Attempt: Add the FreeCAD 1.1 namespaced workbench, selection validation, reversible `Part::FeaturePython`, one-transaction mutation service, exact Part booleans, persisted patch metadata, and post-commit external audit reporting using the documented FreeCAD Python APIs.
+- Result: partial
+- Evidence: Standard Python compilation, XML parsing, and import-isolation checks passed; importing `protocol`, `audit`, and `bridge` loaded none of `FreeCAD`, `FreeCADGui`, or `Part`. `command -v` found no `FreeCADCmd`, `freecadcmd`, `FreeCAD`, or `freecad` executable, matching the earlier planning discovery.
+- Carry-forward rule: Treat add/enlarge cuts and shrink annulus fuse/recut geometry, face-orientation recognition, FeaturePython recompute, GUI registration, and transaction undo as installation-dependent manual verification until run under FreeCAD 1.1. Never report the FreeCAD geometry/GUI smoke tests as run in this environment.
+
 ### 2026-07-26 — Honest offline patch parser
 
 - Branch/commit: `agent/patchcad-foundation` Task 4 worktree

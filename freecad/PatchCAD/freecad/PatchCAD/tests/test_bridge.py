@@ -194,6 +194,47 @@ class GuiThreadDispatcherTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             dispatcher.submit("selection", {}, timeout_s=0.01)
 
+    def test_timeout_cannot_escape_after_gui_execution_has_started(self):
+        dispatcher = GuiThreadDispatcher()
+        started = threading.Event()
+        release = threading.Event()
+        results = []
+        errors = []
+
+        def submit():
+            try:
+                results.append(dispatcher.submit("create_patch", {}, timeout_s=0.1))
+            except BaseException as exc:
+                errors.append(exc)
+
+        def execute_on_gui_thread():
+            while not dispatcher.drain_one(
+                lambda _action, _payload: (
+                    started.set(),
+                    release.wait(timeout=1),
+                    {"patch_id": "patch-1"},
+                )[-1]
+            ):
+                time.sleep(0.001)
+
+        request_thread = threading.Thread(target=submit)
+        gui_thread = threading.Thread(target=execute_on_gui_thread)
+        request_thread.start()
+        gui_thread.start()
+        self.assertTrue(started.wait(timeout=1))
+
+        try:
+            time.sleep(0.12)
+            self.assertTrue(request_thread.is_alive())
+            self.assertEqual(errors, [])
+        finally:
+            release.set()
+            request_thread.join(timeout=1)
+            gui_thread.join(timeout=1)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(results, [{"patch_id": "patch-1"}])
+
 
 if __name__ == "__main__":
     unittest.main()

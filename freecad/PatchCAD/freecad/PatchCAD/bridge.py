@@ -12,7 +12,7 @@ import queue
 import re
 import secrets
 import threading
-from typing import Callable, Mapping, Protocol
+from typing import Callable, Literal, Mapping, Protocol
 from urllib.parse import unquote, urlsplit
 
 from .protocol import ProtocolError, RequestIdCache, parse_patch_request
@@ -37,9 +37,10 @@ class _WorkItem:
     action: str
     payload: object
     completed: threading.Event = field(default_factory=threading.Event)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    state: Literal["queued", "running", "cancelled", "completed"] = "queued"
     result: object = None
     error: BaseException | None = None
-    cancelled: bool = False
 
 
 class GuiThreadDispatcher:
@@ -52,8 +53,14 @@ class GuiThreadDispatcher:
         item = _WorkItem(action=action, payload=payload)
         self._queue.put(item)
         if not item.completed.wait(timeout_s):
-            item.cancelled = True
-            raise TimeoutError("FreeCAD GUI thread did not respond in time")
+            with item.lock:
+                if item.state == "queued":
+                    item.state = "cancelled"
+                    item.completed.set()
+                    raise TimeoutError("FreeCAD GUI thread did not respond in time")
+                running = item.state == "running"
+            if running:
+                item.completed.wait()
         if item.error is not None:
             raise item.error
         return item.result
@@ -63,12 +70,21 @@ class GuiThreadDispatcher:
             item = self._queue.get_nowait()
         except queue.Empty:
             return False
-        if not item.cancelled:
-            try:
-                item.result = handler(item.action, item.payload)
-            except BaseException as exc:
-                item.error = exc
-            finally:
+        with item.lock:
+            if item.state != "queued":
+                return True
+            item.state = "running"
+        result: object = None
+        error: BaseException | None = None
+        try:
+            result = handler(item.action, item.payload)
+        except BaseException as exc:
+            error = exc
+        finally:
+            with item.lock:
+                item.result = result
+                item.error = error
+                item.state = "completed"
                 item.completed.set()
         return True
 

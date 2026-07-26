@@ -125,9 +125,14 @@ function countOperationWords(prompt: string): number {
 
 function parsedPlan(plan: PatchPlan): PatchPlanParseResult {
   const parsed = PatchPlanSchema.safeParse(plan);
-  return parsed.success
-    ? { source: "local-parser", plan: parsed.data }
-    : reject("INVALID_DIMENSION");
+  if (parsed.success) {
+    return { source: "local-parser", plan: parsed.data };
+  }
+
+  const hasDimensionIssue = parsed.error.issues.some((issue) =>
+    issue.path.includes("diameterMm"),
+  );
+  return reject(hasDimensionIssue ? "INVALID_DIMENSION" : "UNSUPPORTED_OPERATION");
 }
 
 function reject(code: PatchPlanParseRejectionCode): PatchPlanParseResult {

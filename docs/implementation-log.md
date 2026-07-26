@@ -23,6 +23,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Evidence: The workflow suite was first RED because `PatchWorkspace` did not exist, then GREEN for exact-kernel readiness, `hole:nw` selection, an 8 mm offline-grammar preview, one changed feature, three protected holes unchanged, Apply, and one-level Undo. The full gate passed 111 tests, typecheck, warning-free lint, and the Next production build.
 - Carry-forward rule: Keep WebGL, Worker transport, and provider HTTP as the only workflow-test doubles. A successful worker build authorizes the preview, Exa remains evidence-only, and real OpenCascade WASM/browser behavior stays an explicit Playwright fact for Task 12.
 
+### 2026-07-26 — Artifact boundary review fix
+
+- Branch/commit: `agent/patchcad-integration` download review
+- Attempt: Close independent-review gaps in canonical hashing, fixed artifact extensions, and cleanup/audit assertions before workspace wiring.
+- Result: worked
+- Evidence: Two regressions were RED: duplicate semantic hole IDs were hashable in source order, and a runtime extension such as `.step/../../unsafe` was appended unsanitized. Hashing now rejects duplicate IDs and the public helper accepts only `.step` or `.json` at both type and runtime boundaries. Tests now also prove anchor removal after click failure and the exact top-level audit key set. All 12 focused tests, typecheck, and lint pass.
+- Carry-forward rule: Semantic hashes require unique IDs before sorting; never expose a “safe filename” helper with an unconstrained extension parameter, and assert exact audit surfaces rather than partial object matches.
+
 ### 2026-07-26 — Playwright browser runtime
 
 - Branch/commit: integration verification environment

@@ -47,6 +47,16 @@ describe("download artifacts", () => {
     expect(safeDownloadFilename(input, "patchcad-bracket", ".step")).toBe(expected);
   });
 
+  it("rejects an extension outside the two fixed artifact formats", () => {
+    expect(() =>
+      safeDownloadFilename(
+        "bracket",
+        "patchcad-bracket",
+        ".step/../../unsafe" as never,
+      ),
+    ).toThrow("extension");
+  });
+
   it("uses the exact STEP and JSON MIME types and always revokes the object URL", () => {
     const anchor = {
       href: "",
@@ -93,6 +103,7 @@ describe("download artifacts", () => {
   });
 
   it("revokes the object URL even when the browser click fails", () => {
+    const remove = vi.fn();
     const environment = {
       createObjectURL: vi.fn(() => "blob:failed"),
       revokeObjectURL: vi.fn(),
@@ -102,7 +113,7 @@ describe("download artifacts", () => {
         click: vi.fn(() => {
           throw new Error("blocked");
         }),
-        remove: vi.fn(),
+        remove,
       })),
     };
 
@@ -116,6 +127,7 @@ describe("download artifacts", () => {
         environment,
       ),
     ).toThrow("blocked");
+    expect(remove).toHaveBeenCalledOnce();
     expect(environment.revokeObjectURL).toHaveBeenCalledWith("blob:failed");
   });
 
@@ -167,7 +179,18 @@ describe("download artifacts", () => {
       new Date("2026-07-26T12:34:56.000Z"),
     );
 
-    expect(JSON.parse(json)).toMatchObject({
+    const parsedAudit = JSON.parse(json);
+    expect(Object.keys(parsedAudit)).toEqual([
+      "schemaVersion",
+      "beforeHash",
+      "afterHash",
+      "selection",
+      "planSource",
+      "plan",
+      "verification",
+      "timestamp",
+    ]);
+    expect(parsedAudit).toEqual({
       schemaVersion: 1,
       beforeHash: "a".repeat(64),
       afterHash: "b".repeat(64),
@@ -212,5 +235,20 @@ describe("download artifacts", () => {
     expect(beforeHash).toMatch(/^[0-9a-f]{64}$/);
     await expect(hashBracketSnapshot(reordered)).resolves.toBe(beforeHash);
     await expect(hashBracketSnapshot(changed)).resolves.not.toBe(beforeHash);
+  });
+
+  it("rejects duplicate semantic hole IDs before hashing", async () => {
+    const bracket = createDemoBracket();
+    const duplicateIds = {
+      ...bracket,
+      holes: [
+        bracket.holes[0],
+        { ...bracket.holes[1], id: bracket.holes[0].id },
+      ],
+    };
+
+    await expect(hashBracketSnapshot(duplicateIds)).rejects.toThrow(
+      "unique semantic IDs",
+    );
   });
 });

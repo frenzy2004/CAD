@@ -10,6 +10,7 @@ import math
 import queue
 import re
 import secrets
+import socket
 import threading
 from typing import Callable, Literal, Mapping, Protocol
 from urllib.parse import unquote, urlsplit
@@ -114,6 +115,8 @@ class BridgeApplication:
     ) -> None:
         if not allowed_origins or any(origin == "*" for origin in allowed_origins):
             raise ValueError("allowed_origins must contain exact origins, never wildcards")
+        if not math.isfinite(request_timeout_s) or request_timeout_s <= 0:
+            raise ValueError("request_timeout_s must be a positive finite deadline")
         self.dispatcher = dispatcher
         self.token = token or secrets.token_urlsafe(32)
         self.allowed_origins = frozenset(allowed_origins)
@@ -327,6 +330,12 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
                 "BODY_TOO_LARGE",
                 "request body exceeds the configured limit",
             )
+        except _BodyReadTimeout:
+            self._error(
+                HTTPStatus.REQUEST_TIMEOUT,
+                "BODY_READ_TIMEOUT",
+                "request body was not received before the configured deadline",
+            )
         except TimeoutError:
             self._error(
                 HTTPStatus.GATEWAY_TIMEOUT,
@@ -354,7 +363,14 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
             raise ProtocolError("Content-Length must not be negative")
         if length > self.app.max_body_bytes:
             raise _BodyTooLarge
-        body = self.rfile.read(length)
+        previous_timeout = self.connection.gettimeout()
+        self.connection.settimeout(self.app.request_timeout_s)
+        try:
+            body = self.rfile.read(length)
+        except socket.timeout as exc:
+            raise _BodyReadTimeout from exc
+        finally:
+            self.connection.settimeout(previous_timeout)
         if len(body) != length:
             raise ProtocolError("request body ended before Content-Length")
         return body
@@ -414,4 +430,8 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
 
 
 class _BodyTooLarge(Exception):
+    pass
+
+
+class _BodyReadTimeout(Exception):
     pass

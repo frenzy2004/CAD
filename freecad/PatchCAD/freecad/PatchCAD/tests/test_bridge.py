@@ -1,5 +1,6 @@
 import http.client
 import json
+import socket
 import threading
 import time
 import unittest
@@ -114,6 +115,38 @@ class RunningBridgeTests(unittest.TestCase):
 
         self.assertEqual(status, 413)
         self.assertEqual(body["error"]["code"], "BODY_TOO_LARGE")
+        self.assertEqual(self.dispatcher.calls, [])
+
+    def test_partial_content_length_body_times_out_cleanly(self):
+        connection = socket.create_connection((self.host, self.port), timeout=1)
+        connection.settimeout(0.25)
+        request = (
+            "POST /patches HTTP/1.1\r\n"
+            f"Host: {self.host}:{self.port}\r\n"
+            f"Authorization: Bearer {self.token}\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: 100\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "{"
+        ).encode("ascii")
+        connection.sendall(request)
+
+        status = None
+        body = None
+        try:
+            response = http.client.HTTPResponse(connection)
+            response.begin()
+            status = response.status
+            data = response.read()
+            body = json.loads(data) if data else None
+        except TimeoutError:
+            pass
+        finally:
+            connection.close()
+
+        self.assertEqual(status, 408)
+        self.assertEqual(body["error"]["code"], "BODY_READ_TIMEOUT")
         self.assertEqual(self.dispatcher.calls, [])
 
     def test_dispatch_timeout_returns_gateway_timeout(self):

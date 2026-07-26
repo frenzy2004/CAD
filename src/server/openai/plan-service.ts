@@ -64,6 +64,25 @@ export class PlanService {
     });
     if (!validation.valid) return { ok: false, code: "AI_UNSAFE_PLAN" };
 
-    return { ok: true, plan: parsed.data };
+    return { ok: true, plan: withControlledRationale(parsed.data) };
   }
+}
+
+function withControlledRationale(plan: PatchPlan): PatchPlan {
+  if (plan.operation === "resize_hole") {
+    const targetFeatureId =
+      plan.targetFeatureId.length <= 128
+        ? plan.targetFeatureId
+        : `${plan.targetFeatureId.slice(0, 125)}...`;
+
+    return {
+      ...plan,
+      rationale: `Resize ${targetFeatureId} to ${plan.diameterMm} mm.`,
+    };
+  }
+
+  return {
+    ...plan,
+    rationale: `Add a ${plan.diameterMm} mm hole on ${plan.targetFaceId} at (${plan.centerMm.x}, ${plan.centerMm.y}) mm.`,
+  };
 }

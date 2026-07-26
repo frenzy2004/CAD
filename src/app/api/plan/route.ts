@@ -2,6 +2,7 @@ import "server-only";
 
 import { getOpenAIConfiguration } from "@/lib/env";
 import { PlanRequestSchema } from "@/lib/cad/schemas";
+import { readBoundedJson } from "@/server/http/read-bounded-json";
 import { createOpenAIModelAdapter } from "@/server/openai/client";
 import { PlanService } from "@/server/openai/plan-service";
 
@@ -13,7 +14,7 @@ export function createPlanRoute(service: PlanService) {
   return async function POST(request: Request): Promise<Response> {
     let json: unknown;
     try {
-      json = await request.json();
+      json = await readBoundedJson(request);
     } catch {
       return errorResponse("INVALID_REQUEST", 400);
     }

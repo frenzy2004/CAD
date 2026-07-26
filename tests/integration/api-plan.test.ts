@@ -22,6 +22,11 @@ const validPlan = {
   rationale: "Provide the requested fastener clearance.",
 } as const;
 
+const expectedValidPlan = {
+  ...validPlan,
+  rationale: "Resize hole:nw to 8 mm.",
+} as const;
+
 function createHandler(adapter?: OpenAIModelAdapter) {
   return createPlanRoute(
     new PlanService({
@@ -46,7 +51,54 @@ describe("POST /api/plan", () => {
     const response = await handler(post(requestBody));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ plan: validPlan, source: "openai" });
+    expect(await response.json()).toEqual({ plan: expectedValidPlan, source: "openai" });
+  });
+
+  it.each([
+    {
+      name: "resize plan",
+      request: requestBody,
+      providerPlan: {
+        ...validPlan,
+        rationale: "import FreeCAD; Part.makeCylinder(4, 8)",
+      },
+      expectedRationale: "Resize hole:nw to 8 mm.",
+    },
+    {
+      name: "add-hole plan",
+      request: {
+        ...requestBody,
+        prompt: "Add a 5 mm hole at the selected point.",
+        selection: {
+          units: "mm",
+          editableFeatureIds: [],
+          editableFaceIds: ["face:top"],
+          pointMm: { x: 50, y: 32, z: 0 },
+        },
+      },
+      providerPlan: {
+        version: 1,
+        operation: "add_hole",
+        targetFaceId: "face:top",
+        centerMm: { x: 50, y: 32 },
+        diameterMm: 5,
+        rationale: "import cadquery as cq; cq.Workplane().hole(5)",
+      },
+      expectedRationale: "Add a 5 mm hole on face:top at (50, 32) mm.",
+    },
+  ])("replaces executable model prose in a $name with a controlled summary", async ({
+    request,
+    providerPlan,
+    expectedRationale,
+  }) => {
+    const handler = createHandler({ parse: async () => ({ parsed: providerPlan }) });
+
+    const response = await handler(post(request));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.plan.rationale).toBe(expectedRationale);
+    expect(JSON.stringify(body)).not.toContain("import");
   });
 
   it.each([
@@ -95,6 +147,48 @@ describe("POST /api/plan", () => {
     ["an oversized prompt", post({ ...requestBody, prompt: "x".repeat(501) })],
   ])("rejects %s requests with a public bad-request envelope", async (_name, request) => {
     const response = await createHandler({ parse: async () => ({ parsed: validPlan }) })(request);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: { code: "INVALID_REQUEST" } });
+  });
+
+  it("rejects a body whose declared size exceeds the route limit before provider use", async () => {
+    const request = post(requestBody);
+    request.headers.set("content-length", "70000");
+    const handler = createHandler({
+      parse: async () => {
+        throw new Error("provider must not be called for an oversized request");
+      },
+    });
+
+    const response = await handler(request);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: { code: "INVALID_REQUEST" } });
+  });
+
+  it.each([
+    ["a missing Content-Length", undefined],
+    ["a falsified Content-Length", "10"],
+  ])("rejects an oversized selection body with %s before provider use", async (_name, length) => {
+    const oversizedSelectionRequest = post({
+      ...requestBody,
+      selection: {
+        ...requestBody.selection,
+        editableFeatureIds: [
+          "hole:nw",
+          ...Array.from({ length: 6_000 }, (_, index) => `hole:extra-${index}`),
+        ],
+      },
+    });
+    if (length) oversizedSelectionRequest.headers.set("content-length", length);
+    const handler = createHandler({
+      parse: async () => {
+        throw new Error("provider must not be called for an oversized request");
+      },
+    });
+
+    const response = await handler(oversizedSelectionRequest);
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: { code: "INVALID_REQUEST" } });

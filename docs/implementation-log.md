@@ -23,6 +23,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Evidence: The integration suite was RED on the missing route, then passed 9 behavior cases covering validated plans, malformed provider output, refusal, incomplete output, protected targets, missing configuration, malformed/oversized requests, and secret-free error envelopes. `npm run typecheck` exited 0.
 - Carry-forward rule: The installed OpenAI 6.49 SDK exposes parsed output at `response.output_parsed`; refusal must be detected from `message` output content with `type: "refusal"`, and every parsed plan must still pass `validatePlan`.
 
+### 2026-07-26 — Task 7 Fix Round 1: bounded requests and controlled rationale
+
+- Branch/commit: `agent/patchcad-providers` after `5c9a4d9`
+- Attempt: Prevent unbounded plan-route JSON consumption and prevent arbitrary model rationale from crossing the provider service boundary.
+- Result: worked
+- Evidence: Declared-oversize, missing-header, and falsified-header body tests were RED with `502` because the provider fake was reached, then GREEN with an early 64 KiB `Content-Length` check and an independent streaming byte cap. Resize and add-hole rationale tests were RED with executable model prose in the response, then GREEN after replacing it with operation-specific deterministic summaries. The focused suite passed 14 tests and type checking exited 0.
+- Carry-forward rule: All provider routes must bound bytes while reading, regardless of headers. Treat structured-output string fields as untrusted provider text; return only controlled local summaries derived from validated semantic and numeric fields.
+
 ### 2026-07-26 — Exa-grounded component research
 
 - Branch/commit: `agent/patchcad-providers` Task 8

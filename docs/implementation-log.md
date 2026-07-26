@@ -15,6 +15,22 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 19:44 — Verified STEP and audit workspace exports
+
+- Branch/commit: `agent/patchcad-workspace` Task 10
+- Attempt: Wire the reviewed artifact utilities to the applied exact-worker state while keeping unverified exports locked.
+- Result: worked
+- Evidence: The export workflow was RED because an enabled toolbar button had no export behavior, then GREEN after STEP requested the worker's current exact shape and audit export hashed only the typed before/after state. Two workspace tests, 12 artifact tests, all 114 repository tests, typecheck, warning-free lint, and the production build passed.
+- Carry-forward rule: Export the worker's current shape only after Apply establishes a verified state; reject empty STEP bytes, use fixed filenames/MIME types, and build audit JSON only from the typed applied-patch record.
+
+### 2026-07-26 19:41 — Explicit Testing Library cleanup
+
+- Branch/commit: `agent/patchcad-workspace` Task 10 RED
+- Attempt: Add a second integration workflow while relying on Testing Library's automatic cleanup.
+- Result: failed, then worked
+- Evidence: The second test found two `Download STEP` buttons because this Vitest setup imports lifecycle functions rather than exposing them globally, so Testing Library did not register its global auto-cleanup hook. Calling `cleanup()` in the file's existing `afterEach` restored isolation; the next run reached the intended missing-export failure.
+- Carry-forward rule: Integration test files using imported Vitest lifecycle functions must register explicit DOM cleanup when multiple renders share the file; treat duplicate accessible elements across tests as a harness-isolation failure before diagnosing product behavior.
+
 ### 2026-07-26 19:39 — Complete local patch workspace
 
 - Branch/commit: `agent/patchcad-workspace` Task 9

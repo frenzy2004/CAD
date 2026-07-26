@@ -24,6 +24,13 @@ import {
   type VerificationReport,
 } from "@/lib/cad/schemas";
 import type { CadMesh } from "@/lib/cad/worker-protocol";
+import {
+  JSON_MIME_TYPE,
+  STEP_MIME_TYPE,
+  createPatchAuditJson,
+  downloadArtifact,
+  hashBracketSnapshot,
+} from "@/lib/download";
 
 export type WorkspacePhase =
   | "booting"
@@ -70,6 +77,7 @@ type WorkspaceState = {
   research: ResearchState;
   stepByteSize: number | null;
   auditByteSize: number | null;
+  artifactStatus: "idle" | "exporting-step" | "exporting-audit";
 };
 
 type Action =
@@ -98,6 +106,7 @@ type Action =
   | { type: "RESEARCH_READY"; sources: ResearchSource[] }
   | { type: "RESEARCH_UNAVAILABLE" }
   | { type: "RESEARCH_FAILED" }
+  | { type: "ARTIFACT_STARTED"; artifact: "step" | "audit" }
   | { type: "STEP_EXPORTED"; byteSize: number }
   | { type: "AUDIT_EXPORTED"; byteSize: number }
   | { type: "FAILED"; message: string };
@@ -120,8 +129,8 @@ export type PatchWorkspaceController = WorkspaceState & {
   rejectPreview(): Promise<void>;
   undo(): Promise<void>;
   reset(): Promise<void>;
-  markStepExported(byteSize: number): void;
-  markAuditExported(byteSize: number): void;
+  exportStep(): Promise<void>;
+  exportAudit(): Promise<void>;
   fail(message: string): void;
 };
 
@@ -149,6 +158,7 @@ function initialState(snapshot: BracketSnapshot): WorkspaceState {
     research: EMPTY_RESEARCH,
     stepByteSize: null,
     auditByteSize: null,
+    artifactStatus: "idle",
   };
 }
 
@@ -240,6 +250,7 @@ function workspaceReducer(
         error: null,
         stepByteSize: null,
         auditByteSize: null,
+        artifactStatus: "idle",
       };
     case "REJECT_STARTED": {
       const cleared = clearPreview(state);
@@ -298,12 +309,34 @@ function workspaceReducer(
         ...state,
         research: { status: "error", sources: [] },
       };
+    case "ARTIFACT_STARTED":
+      return {
+        ...state,
+        artifactStatus:
+          action.artifact === "step"
+            ? "exporting-step"
+            : "exporting-audit",
+        error: null,
+      };
     case "STEP_EXPORTED":
-      return { ...state, stepByteSize: action.byteSize };
+      return {
+        ...state,
+        artifactStatus: "idle",
+        stepByteSize: action.byteSize,
+      };
     case "AUDIT_EXPORTED":
-      return { ...state, auditByteSize: action.byteSize };
+      return {
+        ...state,
+        artifactStatus: "idle",
+        auditByteSize: action.byteSize,
+      };
     case "FAILED":
-      return { ...state, phase: "error", error: action.message };
+      return {
+        ...state,
+        phase: "error",
+        artifactStatus: "idle",
+        error: action.message,
+      };
   }
 }
 
@@ -667,6 +700,108 @@ export function usePatchWorkspace(
     }
   }, [buildExactMesh, initialSnapshot]);
 
+  const exportStep = useCallback(async () => {
+    if (
+      state.phase !== "verified" ||
+      !state.currentMesh ||
+      !state.appliedPatch ||
+      state.artifactStatus !== "idle"
+    ) {
+      dispatch({
+        type: "FAILED",
+        message: "STEP export requires a verified exact worker result.",
+      });
+      return;
+    }
+
+    const token = operationToken.current;
+    dispatch({ type: "ARTIFACT_STARTED", artifact: "step" });
+    try {
+      const reply = await requestWorker({ type: "export-step" });
+      if (token !== operationToken.current) return;
+      if (reply.type !== "step" || reply.bytes.byteLength === 0) {
+        throw new Error("The exact CAD kernel returned an empty STEP file.");
+      }
+      const result = downloadArtifact({
+        filename: "patchcad-bracket.step",
+        mimeType: STEP_MIME_TYPE,
+        data: reply.bytes,
+      });
+      dispatch({ type: "STEP_EXPORTED", byteSize: result.byteLength });
+    } catch (error) {
+      if (token === operationToken.current) {
+        dispatch({
+          type: "FAILED",
+          message:
+            error instanceof Error
+              ? error.message
+              : "The exact STEP export failed.",
+        });
+      }
+    }
+  }, [
+    requestWorker,
+    state.appliedPatch,
+    state.artifactStatus,
+    state.currentMesh,
+    state.phase,
+  ]);
+
+  const exportAudit = useCallback(async () => {
+    if (
+      state.phase !== "verified" ||
+      !state.currentMesh ||
+      !state.appliedPatch ||
+      state.artifactStatus !== "idle"
+    ) {
+      dispatch({
+        type: "FAILED",
+        message: "Audit export requires an applied, verified patch.",
+      });
+      return;
+    }
+
+    const token = operationToken.current;
+    const patch = state.appliedPatch;
+    dispatch({ type: "ARTIFACT_STARTED", artifact: "audit" });
+    try {
+      const [beforeHash, afterHash] = await Promise.all([
+        hashBracketSnapshot(patch.before),
+        hashBracketSnapshot(patch.after),
+      ]);
+      if (token !== operationToken.current) return;
+      const json = createPatchAuditJson({
+        beforeHash,
+        afterHash,
+        selection: patch.selection,
+        planSource: patch.planSource,
+        plan: patch.plan,
+        verification: patch.verification,
+      });
+      const result = downloadArtifact({
+        filename: "patchcad-audit.json",
+        mimeType: JSON_MIME_TYPE,
+        data: json,
+      });
+      dispatch({ type: "AUDIT_EXPORTED", byteSize: result.byteLength });
+    } catch (error) {
+      if (token === operationToken.current) {
+        dispatch({
+          type: "FAILED",
+          message:
+            error instanceof Error
+              ? error.message
+              : "The patch audit export failed.",
+        });
+      }
+    }
+  }, [
+    state.appliedPatch,
+    state.artifactStatus,
+    state.currentMesh,
+    state.phase,
+  ]);
+
   const selectedFeature =
     state.selection?.editableFeatureIds.length === 1
       ? state.currentSnapshot.holes.find(
@@ -693,7 +828,8 @@ export function usePatchWorkspace(
     canExport:
       state.phase === "verified" &&
       state.currentMesh !== null &&
-      state.appliedPatch !== null,
+      state.appliedPatch !== null &&
+      state.artifactStatus === "idle",
     setSelection,
     setInstruction,
     submitPlan,
@@ -702,10 +838,8 @@ export function usePatchWorkspace(
     rejectPreview,
     undo,
     reset,
-    markStepExported: (byteSize) =>
-      dispatch({ type: "STEP_EXPORTED", byteSize }),
-    markAuditExported: (byteSize) =>
-      dispatch({ type: "AUDIT_EXPORTED", byteSize }),
+    exportStep,
+    exportAudit,
     fail: (message) => dispatch({ type: "FAILED", message }),
   };
 }

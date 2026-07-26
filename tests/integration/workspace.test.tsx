@@ -1,4 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -33,15 +38,23 @@ function meshFor(snapshot: BracketSnapshot): CadMesh {
 
 const workerRequest = vi.fn(
   async (command: CadWorkerCommand): Promise<CadWorkerReply> => {
-    if (command.type !== "build") {
-      throw new Error(`Unexpected worker command: ${command.type}`);
+    if (command.type === "export-step") {
+      return {
+        id: crypto.randomUUID(),
+        type: "step",
+        filename: "patchcad-bracket.step",
+        bytes: new Uint8Array([1, 2, 3, 4]).buffer,
+      };
+    }
+    if (command.type === "build") {
+      return {
+        id: crypto.randomUUID(),
+        type: "mesh",
+        mesh: meshFor(command.snapshot),
+      };
     }
 
-    return {
-      id: crypto.randomUUID(),
-      type: "mesh",
-      mesh: meshFor(command.snapshot),
-    };
+    throw new Error(`Unexpected worker command: ${command.type}`);
   },
 );
 const workerInitialize = vi.fn(async () => undefined);
@@ -91,7 +104,9 @@ vi.mock("@/components/cad/CadViewport", () => ({
 import { PatchWorkspace } from "@/components/workspace/PatchWorkspace";
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   workerRequest.mockClear();
   workerInitialize.mockClear();
   workerTerminate.mockClear();
@@ -161,5 +176,85 @@ describe("PatchCAD workspace", () => {
         "6 mm",
       );
     });
+  });
+
+  it("keeps exports locked until verification, then downloads exact STEP and typed audit artifacts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/plan") {
+          return Response.json(
+            { error: { code: "AI_NOT_CONFIGURED" } },
+            { status: 503 },
+          );
+        }
+        return Response.json(
+          { error: { code: "RESEARCH_NOT_CONFIGURED" } },
+          { status: 503 },
+        );
+      }),
+    );
+    const createObjectURL = vi.fn(
+      (_blob: Blob) => `blob:patchcad-${createObjectURL.mock.calls.length}`,
+    );
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+      () => undefined,
+    );
+    const user = userEvent.setup();
+
+    render(<PatchWorkspace initialSnapshot={createDemoBracket()} />);
+
+    const stepButton = screen.getByRole("button", {
+      name: "Download STEP",
+    });
+    const auditButton = screen.getByRole("button", {
+      name: "Download patch audit",
+    });
+    expect(stepButton).toBeDisabled();
+    expect(auditButton).toBeDisabled();
+
+    await screen.findByText("Exact kernel ready", { exact: false });
+    await user.click(screen.getByRole("button", { name: "Select hole:nw" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Patch instruction" }),
+      "make this hole 8 mm",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Preview patch" }),
+    );
+    await screen.findByText("3 protected holes unchanged");
+    await user.click(
+      screen.getByRole("button", { name: "Apply verified patch" }),
+    );
+
+    expect(stepButton).toBeEnabled();
+    expect(auditButton).toBeEnabled();
+
+    await user.click(stepButton);
+    expect(
+      await screen.findByText(/STEP 4 B/, { selector: "p" }),
+    ).toHaveTextContent("Browser-local artifacts");
+
+    await user.click(auditButton);
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /audit [1-9][0-9]*(?:\.[0-9])? (?:B|KiB)/,
+          { selector: "p" },
+        ),
+      ).toBeInTheDocument();
+    });
+
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    expect(createObjectURL.mock.calls[0][0]).toMatchObject({
+      size: 4,
+      type: "model/step",
+    });
+    expect(createObjectURL.mock.calls[1][0]).toMatchObject({
+      type: "application/json",
+    });
+    expect(revokeObjectURL).toHaveBeenCalledTimes(2);
   });
 });

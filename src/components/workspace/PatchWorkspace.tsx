@@ -93,6 +93,9 @@ export function PatchWorkspace({
           <Button
             aria-label="Download STEP"
             disabled={!workspace.canExport}
+            onClick={() => {
+              void workspace.exportStep();
+            }}
             variant="secondary"
           >
             <Download aria-hidden="true" size={15} />
@@ -101,6 +104,9 @@ export function PatchWorkspace({
           <Button
             aria-label="Download patch audit"
             disabled={!workspace.canExport}
+            onClick={() => {
+              void workspace.exportAudit();
+            }}
             variant="secondary"
           >
             <FileJson aria-hidden="true" size={15} />

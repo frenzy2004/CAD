@@ -5,6 +5,7 @@ import {
   STEP_MIME_TYPE,
   createPatchAuditJson,
   downloadArtifact,
+  hashBracketSnapshot,
   safeDownloadFilename,
 } from "@/lib/download";
 import { createDemoBracket } from "@/lib/cad/demo-bracket";
@@ -191,5 +192,25 @@ describe("download artifacts", () => {
         verification,
       }),
     ).toThrow();
+  });
+
+  it("hashes validated bracket content deterministically by semantic hole ID", async () => {
+    const bracket = createDemoBracket();
+    const reordered = {
+      ...bracket,
+      holes: [...bracket.holes].reverse(),
+    };
+    const changed = {
+      ...bracket,
+      holes: bracket.holes.map((hole) =>
+        hole.id === "hole:nw" ? { ...hole, diameterMm: 8 } : hole,
+      ),
+    };
+
+    const beforeHash = await hashBracketSnapshot(bracket);
+
+    expect(beforeHash).toMatch(/^[0-9a-f]{64}$/);
+    await expect(hashBracketSnapshot(reordered)).resolves.toBe(beforeHash);
+    await expect(hashBracketSnapshot(changed)).resolves.not.toBe(beforeHash);
   });
 });

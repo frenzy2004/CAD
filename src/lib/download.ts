@@ -1,9 +1,11 @@
 import {
+  BracketSnapshotSchema,
   PatchPlanSchema,
   SelectionEnvelopeSchema,
   VerificationReportSchema,
 } from "./cad/schemas";
 import type {
+  BracketSnapshot,
   PatchPlan,
   SelectionEnvelope,
   VerificationReport,
@@ -129,6 +131,30 @@ export function createPatchAuditJson(
   };
 
   return `${JSON.stringify(audit, null, 2)}\n`;
+}
+
+export async function hashBracketSnapshot(
+  snapshot: BracketSnapshot,
+  subtleCrypto: Pick<SubtleCrypto, "digest"> | undefined =
+    globalThis.crypto?.subtle,
+): Promise<string> {
+  if (!subtleCrypto) {
+    throw new Error("SHA-256 is unavailable in this browser.");
+  }
+
+  const parsed = BracketSnapshotSchema.parse(snapshot);
+  const canonical = {
+    ...parsed,
+    holes: [...parsed.holes].sort((left, right) =>
+      left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+    ),
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(canonical));
+  const digest = await subtleCrypto.digest("SHA-256", bytes);
+
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 function normalizeFilenameStem(value: string): string {

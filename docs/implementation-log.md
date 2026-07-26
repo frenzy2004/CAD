@@ -28,8 +28,8 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Branch/commit: `agent/patchcad-integration` Task 10 partial
 - Attempt: Build the browser-only artifact utility before workspace wiring, with fixed MIME types, safe filenames, exact byte reporting, explicit audit serialization, and deterministic cleanup.
 - Result: worked
-- Evidence: The first suite was RED on the missing module. Two follow-up regressions were RED because an anchor cleanup exception could prevent URL revocation and because `planSource` relied only on TypeScript; nested cleanup and a runtime source allowlist made all 9 focused tests pass. Typecheck and lint passed.
-- Carry-forward rule: Workspace export must call this boundary only after worker verification. Audit serialization explicitly selects typed fields, and object URL cleanup must remain inside a nested `finally` so one cleanup failure cannot skip the other.
+- Evidence: The first suite was RED on the missing module. Two follow-up regressions were RED because an anchor cleanup exception could prevent URL revocation and because `planSource` relied only on TypeScript; nested cleanup and a runtime source allowlist fixed both. A later RED required a real validated SHA-256 helper for before/after bracket state; it now canonicalizes hole order by semantic ID. All 10 focused tests, typecheck, and lint pass.
+- Carry-forward rule: Workspace export must call this boundary only after worker verification. Audit serialization explicitly selects typed fields, object URL cleanup must remain inside a nested `finally`, and bracket audit hashes must use the canonical semantic-ID order.
 
 ### 2026-07-26 — Health route and attribution slice
 

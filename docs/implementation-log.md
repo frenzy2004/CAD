@@ -15,6 +15,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-26 19:39 — Complete local patch workspace
+
+- Branch/commit: `agent/patchcad-workspace` Task 9
+- Attempt: Assemble the exact worker, Magic Circle selection, provider/offline planning, deterministic verification, and non-chat industrial UI behind one explicit reducer.
+- Result: worked
+- Evidence: The workflow suite was first RED because `PatchWorkspace` did not exist, then GREEN for exact-kernel readiness, `hole:nw` selection, an 8 mm offline-grammar preview, one changed feature, three protected holes unchanged, Apply, and one-level Undo. The full gate passed 111 tests, typecheck, warning-free lint, and the Next production build.
+- Carry-forward rule: Keep WebGL, Worker transport, and provider HTTP as the only workflow-test doubles. A successful worker build authorizes the preview, Exa remains evidence-only, and real OpenCascade WASM/browser behavior stays an explicit Playwright fact for Task 12.
+
 ### 2026-07-26 — Playwright browser runtime
 
 - Branch/commit: integration verification environment

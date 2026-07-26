@@ -126,6 +126,40 @@ class MutationRecomputeTests(unittest.TestCase):
         self.assertEqual(patch.Document.commits, 1)
         self.assertEqual(patch.Document.aborts, 0)
 
+    def test_pre_write_filesystem_error_is_post_commit_audit_error(self):
+        patch = PatchObject()
+        patch.Document.FileName = "/read-only/Bracket.FCStd"
+
+        def fresh_recompute():
+            patch.Proxy.execution_serial += 1
+            patch.Shape = ValidStaleShape()
+            return 1
+
+        patch.Document.recompute_behavior = fresh_recompute
+        result = None
+        error = None
+        with mock.patch.object(
+            service,
+            "write_audit_entry",
+            side_effect=PermissionError("audit directory denied"),
+        ):
+            try:
+                result = PatchService()._mutate_patch(
+                    patch,
+                    "Update PatchCAD diameter",
+                    lambda: setattr(patch, "Diameter", 12.0),
+                    {"operation": "update_diameter", "diameter_mm": 12.0},
+                )
+            except OSError as exc:
+                error = exc
+
+        self.assertIsNone(error)
+        self.assertEqual(result["audit_error"]["code"], "AUDIT_WRITE_FAILED")
+        self.assertIn("audit directory denied", result["audit_error"]["message"])
+        self.assertEqual(patch.Diameter, 12.0)
+        self.assertEqual(patch.Document.commits, 1)
+        self.assertEqual(patch.Document.aborts, 0)
+
 
 class PersistedIdempotencyTests(unittest.TestCase):
     @staticmethod

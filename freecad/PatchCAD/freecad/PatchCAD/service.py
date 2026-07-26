@@ -7,7 +7,7 @@ import importlib
 from pathlib import Path
 import uuid
 
-from .audit import AuditWriteError, write_audit_entry
+from .audit import write_audit_entry
 from .feature import attach_patch_feature, valid_one_solid
 from .protocol import IdempotencyConflict, PatchRequest, patch_request_fingerprint
 from .selection import (
@@ -224,6 +224,6 @@ class PatchService:
             }
         try:
             write_audit_entry(Path(filename), entry)
-        except AuditWriteError as exc:
+        except OSError as exc:
             return {"code": "AUDIT_WRITE_FAILED", "message": str(exc)}
         return None

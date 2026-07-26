@@ -18,9 +18,9 @@ def audit_path_for(document_path: str | os.PathLike[str]) -> Path:
 
 
 def _read_existing(path: Path) -> list[object]:
-    if not path.exists():
-        return []
     try:
+        if not path.exists():
+            return []
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise AuditWriteError(f"cannot read existing audit: {exc}") from exc
@@ -39,13 +39,13 @@ def write_audit_entry(
     """Append an entry using a flushed, fsynced, same-directory replacement."""
 
     destination = audit_path_for(document_path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    entries = _read_existing(destination)
-    entries.append(dict(entry))
-    payload = {"schema_version": 1, "entries": entries}
     temporary_name: str | None = None
 
     try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        entries = _read_existing(destination)
+        entries.append(dict(entry))
+        payload = {"schema_version": 1, "entries": entries}
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
@@ -61,6 +61,8 @@ def write_audit_entry(
         os.replace(temporary_name, destination)
         temporary_name = None
         return destination
+    except AuditWriteError:
+        raise
     except OSError as exc:
         raise AuditWriteError(str(exc)) from exc
     finally:

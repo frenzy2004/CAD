@@ -59,6 +59,38 @@ class AuditWriteTests(unittest.TestCase):
             )
             self.assertEqual(list(Path(directory).glob(".patchcad-audit-*")), [])
 
+    def test_parent_directory_failure_is_reported_as_audit_write_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            document_path = Path(directory) / "missing" / "Bracket.FCStd"
+            error = None
+
+            with mock.patch.object(
+                Path, "mkdir", side_effect=PermissionError("read-only directory")
+            ):
+                try:
+                    write_audit_entry(document_path, {"audit_id": "audit-1"})
+                except OSError as exc:
+                    error = exc
+
+            self.assertIsInstance(error, AuditWriteError)
+            self.assertIn("read-only directory", str(error))
+
+    def test_existing_path_probe_failure_is_reported_as_audit_write_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            document_path = Path(directory) / "Bracket.FCStd"
+            error = None
+
+            with mock.patch.object(
+                Path, "exists", side_effect=PermissionError("path probe denied")
+            ):
+                try:
+                    write_audit_entry(document_path, {"audit_id": "audit-1"})
+                except OSError as exc:
+                    error = exc
+
+            self.assertIsInstance(error, AuditWriteError)
+            self.assertIn("path probe denied", str(error))
+
 
 if __name__ == "__main__":
     unittest.main()

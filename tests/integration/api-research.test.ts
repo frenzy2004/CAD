@@ -1,25 +1,123 @@
 import { describe, expect, it } from "vitest";
+import { EXA_PROVIDER_KEY_HEADER } from "@/lib/provider-keys";
 import { createResearchRoute } from "@/server/exa/research-route";
 import { ResearchService, type ExaAdapter } from "@/server/exa/research-service";
 
+const providerKey = "synthetic-exa-provider-key";
+
 function createHandler(adapter?: ExaAdapter) {
   return createResearchRoute(
-    new ResearchService({
-      configuration: adapter ? { apiKey: "exa-test-key" } : undefined,
-      adapter,
-    }),
+    (apiKey) =>
+      new ResearchService({
+        configuration: adapter ? { apiKey } : undefined,
+        adapter,
+      }),
   );
 }
 
 function post(body: unknown) {
   return new Request("http://localhost/api/research", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      [EXA_PROVIDER_KEY_HEADER]: providerKey,
+    },
     body: JSON.stringify(body),
   });
 }
 
 describe("POST /api/research", () => {
+  it("returns the exact throttle envelope without constructing a provider service", async () => {
+    let factoryCalls = 0;
+    let adapterCalls = 0;
+    const handler = createResearchRoute(
+      () => {
+        factoryCalls += 1;
+        return new ResearchService({
+          configuration: { apiKey: providerKey },
+          adapter: {
+            searchAndContents: async () => {
+              adapterCalls += 1;
+              return { results: [] };
+            },
+          },
+        });
+      },
+      { acquire: () => null },
+    );
+
+    const response = await handler(post({ query: "bracket datasheet" }));
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({
+      error: { code: "PROVIDER_THROTTLED" },
+    });
+    expect(factoryCalls).toBe(0);
+    expect(adapterCalls).toBe(0);
+  });
+
+  it("rejects a missing provider key before reading the stream, invoking the factory, or adapter", async () => {
+    let bodyRead = false;
+    let factoryCalls = 0;
+    let adapterCalls = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          bodyRead = true;
+          controller.enqueue(new TextEncoder().encode('{"query":"bracket datasheet"}'));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const request = new Request("http://localhost/api/research", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const handler = createResearchRoute(() => {
+      factoryCalls += 1;
+      return new ResearchService({
+        configuration: { apiKey: "synthetic-exa-provider-key" },
+        adapter: {
+          searchAndContents: async () => {
+            adapterCalls += 1;
+            return { results: [] };
+          },
+        },
+      });
+    });
+
+    const response = await handler(request);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: { code: "PROVIDER_KEY_REQUIRED" },
+    });
+    expect(bodyRead).toBe(false);
+    expect(factoryCalls).toBe(0);
+    expect(adapterCalls).toBe(0);
+  });
+
+  it("passes the trimmed synthetic provider key to the service factory", async () => {
+    let receivedKey: string | undefined;
+    const handler = createResearchRoute((apiKey) => {
+      receivedKey = apiKey;
+      return new ResearchService({
+        configuration: { apiKey },
+        adapter: { searchAndContents: async () => ({ results: [] }) },
+      });
+    });
+    const request = post({ query: "bracket datasheet" });
+    request.headers.set(EXA_PROVIDER_KEY_HEADER, "  synthetic-exa-provider-key  ");
+
+    const response = await handler(request);
+
+    expect(response.status).toBe(200);
+    expect(receivedKey).toBe("synthetic-exa-provider-key");
+  });
+
   it("returns normalized, deduplicated mounting-spec evidence", async () => {
     const searchInputs: Parameters<ExaAdapter["searchAndContents"]>[0][] = [];
     const adapter: ExaAdapter = {
@@ -141,7 +239,10 @@ describe("POST /api/research", () => {
   ])("bounds actual research body bytes with %s", async (_name, length) => {
     const request = new Request("http://localhost/api/research", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        [EXA_PROVIDER_KEY_HEADER]: providerKey,
+      },
       body: `${" ".repeat(70_000)}{"query":"bracket datasheet"}`,
     });
     if (length) request.headers.set("content-length", length);

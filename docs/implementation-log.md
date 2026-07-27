@@ -64,7 +64,141 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: partial
 - Evidence: Standard Python compilation, XML parsing, and import-isolation checks passed; importing `protocol`, `audit`, and `bridge` loaded none of `FreeCAD`, `FreeCADGui`, or `Part`. `command -v` found no `FreeCADCmd`, `freecadcmd`, `FreeCAD`, or `freecad` executable, matching the earlier planning discovery.
 - Carry-forward rule: Treat add/enlarge cuts and shrink annulus fuse/recut geometry, face-orientation recognition, FeaturePython recompute, GUI registration, and transaction undo as installation-dependent manual verification until run under FreeCAD 1.1. Never report the FreeCAD geometry/GUI smoke tests as run in this environment.
+### 2026-07-26 20:09 — Workspace independent-review hardening
 
+- Branch/commit: `agent/patchcad-workspace` PR review fix
+- Attempt: Reproduce and close the real-viewport selection, stale-plan, async race, keyboard accessibility, research invalidation, and worker-status findings without weakening exact-geometry boundaries.
+- Result: worked
+- Evidence: Regressions were RED for missing keyboard selection, preview mesh revision clearing the selection, instruction edits retaining an applicable stale plan, a pending 9 mm rebuild overwriting a newer blank value, stale research appearing after JSON body parsing, and an errored worker still announcing `Exact kernel ready`. The non-configuration provider-error test passed immediately and proved there was no offline fallback. After the fixes, all focused regressions passed; the full web suite passed 18 files and 122 tests, warning-free lint and typecheck passed, and the production build emitted all routes. Reject and Reset restoration also have workflow coverage.
+- Carry-forward rule: Preserve semantic selection across explicitly authorized workspace mesh revisions only; every user edit must invalidate older async work before validation or body parsing completes, and kernel accessibility text must derive from worker status rather than retained mesh availability.
+
+### 2026-07-26 20:09 — FreeCAD test script points to an unmerged package
+
+- Branch/commit: `agent/patchcad-workspace` PR review verification
+- Attempt: Run the repository `npm run test:freecad` gate after the workspace fixes.
+- Result: failed
+- Evidence: Python exited before collecting tests with `Start directory is not importable: 'freecad/PatchCAD/freecad/PatchCAD/tests'`; this branch contains only `freecad/README.md`, while the FreeCAD package remains on its separate implementation branch.
+- Carry-forward rule: Do not report FreeCAD tests as executed on a branch that does not contain the package. Merge the reviewed FreeCAD branch before making this script a required combined-branch gate.
+
+### 2026-07-26 19:44 — Verified STEP and audit workspace exports
+
+- Branch/commit: `agent/patchcad-workspace` Task 10
+- Attempt: Wire the reviewed artifact utilities to the applied exact-worker state while keeping unverified exports locked.
+- Result: worked
+- Evidence: The export workflow was RED because an enabled toolbar button had no export behavior, then GREEN after STEP requested the worker's current exact shape and audit export hashed only the typed before/after state. Two workspace tests, 12 artifact tests, all 114 repository tests, typecheck, warning-free lint, and the production build passed.
+- Carry-forward rule: Export the worker's current shape only after Apply establishes a verified state; reject empty STEP bytes, use fixed filenames/MIME types, and build audit JSON only from the typed applied-patch record.
+
+### 2026-07-26 19:41 — Explicit Testing Library cleanup
+
+- Branch/commit: `agent/patchcad-workspace` Task 10 RED
+- Attempt: Add a second integration workflow while relying on Testing Library's automatic cleanup.
+- Result: failed, then worked
+- Evidence: The second test found two `Download STEP` buttons because this Vitest setup imports lifecycle functions rather than exposing them globally, so Testing Library did not register its global auto-cleanup hook. Calling `cleanup()` in the file's existing `afterEach` restored isolation; the next run reached the intended missing-export failure.
+- Carry-forward rule: Integration test files using imported Vitest lifecycle functions must register explicit DOM cleanup when multiple renders share the file; treat duplicate accessible elements across tests as a harness-isolation failure before diagnosing product behavior.
+
+### 2026-07-26 19:39 — Complete local patch workspace
+
+- Branch/commit: `agent/patchcad-workspace` Task 9
+- Attempt: Assemble the exact worker, Magic Circle selection, provider/offline planning, deterministic verification, and non-chat industrial UI behind one explicit reducer.
+- Result: worked
+- Evidence: The workflow suite was first RED because `PatchWorkspace` did not exist, then GREEN for exact-kernel readiness, `hole:nw` selection, an 8 mm offline-grammar preview, one changed feature, three protected holes unchanged, Apply, and one-level Undo. The full gate passed 111 tests, typecheck, warning-free lint, and the Next production build.
+- Carry-forward rule: Keep WebGL, Worker transport, and provider HTTP as the only workflow-test doubles. A successful worker build authorizes the preview, Exa remains evidence-only, and real OpenCascade WASM/browser behavior stays an explicit Playwright fact for Task 12.
+
+### 2026-07-26 — Artifact boundary review fix
+
+- Branch/commit: `agent/patchcad-integration` download review
+- Attempt: Close independent-review gaps in canonical hashing, fixed artifact extensions, and cleanup/audit assertions before workspace wiring.
+- Result: worked
+- Evidence: Two regressions were RED: duplicate semantic hole IDs were hashable in source order, and a runtime extension such as `.step/../../unsafe` was appended unsanitized. Hashing now rejects duplicate IDs and the public helper accepts only `.step` or `.json` at both type and runtime boundaries. Tests now also prove anchor removal after click failure and the exact top-level audit key set. All 12 focused tests, typecheck, and lint pass.
+- Carry-forward rule: Semantic hashes require unique IDs before sorting; never expose a “safe filename” helper with an unconstrained extension parameter, and assert exact audit surfaces rather than partial object matches.
+
+### 2026-07-26 — Playwright browser runtime
+
+- Branch/commit: integration verification environment
+- Attempt: Check for and preinstall the lockfile-matched Playwright Chromium runtime before the real CAD/WASM end-to-end gate.
+- Result: worked
+- Evidence: `npx playwright install --dry-run chromium` identified missing Chromium build 1234, FFmpeg 1011, and its headless shell. The approved `npx playwright install chromium` downloaded all three successfully to Playwright's user cache.
+- Carry-forward rule: Reuse Playwright Chromium build 1234 for Task 12; do not repeat the ~275 MiB browser download unless the pinned Playwright version changes.
+
+### 2026-07-26 — Research route actual-byte bound
+
+- Branch/commit: `agent/patchcad-integration` provider hardening
+- Attempt: Apply the existing streaming 64 KiB JSON reader consistently to the Exa route instead of trusting `request.json()`.
+- Result: worked
+- Evidence: Three regressions were RED with `502`: a declared 70,000-byte body and valid JSON padded beyond 64 KiB with missing or falsified `Content-Length` all reached the Exa adapter. The research handler now uses `readBoundedJson`; all 7 focused tests pass and the adapter is never reached for those bodies. Typecheck and lint pass.
+- Carry-forward rule: Every provider route must cap actual stream bytes independently of `Content-Length`; schema size limits do not protect the server from oversized-but-valid JSON framing.
+
+### 2026-07-26 — Exact STEP and audit download boundary
+
+- Branch/commit: `agent/patchcad-integration` Task 10 partial
+- Attempt: Build the browser-only artifact utility before workspace wiring, with fixed MIME types, safe filenames, exact byte reporting, explicit audit serialization, and deterministic cleanup.
+- Result: worked
+- Evidence: The first suite was RED on the missing module. Two follow-up regressions were RED because an anchor cleanup exception could prevent URL revocation and because `planSource` relied only on TypeScript; nested cleanup and a runtime source allowlist fixed both. A later RED required a real validated SHA-256 helper for before/after bracket state; it now canonicalizes hole order by semantic ID. All 10 focused tests, typecheck, and lint pass.
+- Carry-forward rule: Workspace export must call this boundary only after worker verification. Audit serialization explicitly selects typed fields, object URL cleanup must remain inside a nested `finally`, and bracket audit hashes must use the canonical semantic-ID order.
+
+### 2026-07-26 — Health route and attribution slice
+
+- Branch/commit: `agent/patchcad-integration` Task 12 partial
+- Attempt: Add a cache-disabled health route that reveals only provider configuration presence, then document the trust boundary, noncommercial scope, supported limits, exact upstream licenses, and Text2CAD inspiration boundary.
+- Result: worked
+- Evidence: The two focused suites were RED on missing health modules, then passed 5 tests after adding a server-only injectable handler and an App Router module exposing only `GET`. The full suite passed 62 tests; typecheck, lint, and the Next production build passed and emitted dynamic `/api/health`, `/api/plan`, and `/api/research` routes. Installed package metadata and upstream license files agree that all three replicad packages are MIT, FreeCAD is LGPL-2.1-or-later, OCCT is LGPL-2.1 with its exception, and Text2CAD is CC BY-NC-SA 4.0.
+- Carry-forward rule: Health responses may reveal only booleans, never values. Keep Text2CAD credit explicitly inspiration-only unless its noncommercial ShareAlike material is intentionally incorporated.
+
+### 2026-07-26 — Synchronous health handler test assumption
+
+- Branch/commit: `agent/patchcad-integration` health-route TDD
+- Attempt: Parse the health handler's `Response` by calling `.then` directly on the handler result.
+- Result: failed, then worked
+- Evidence: The test failed with `TypeError: GET(...).then is not a function` because the injectable handler intentionally returns a synchronous `Response`. Reading `response.json()` directly made the unchanged implementation and both focused suites pass.
+- Carry-forward rule: Route handlers may return `Response` or `Promise<Response>`; tests must await the body method on the returned response instead of assuming the handler itself is promise-shaped.
+
+### 2026-07-26 — Parallel Next build lock collision
+
+- Branch/commit: `agent/patchcad-providers` verification gate
+- Attempt: Start a second production build while an independent reviewer was already building the same worktree.
+- Result: failed, then worked
+- Evidence: The second `npm run build` exited immediately with `Another next build process is already running`. The existing build completed and released `.next/lock`; an unchanged retry then compiled, type-checked, generated all pages, and emitted both provider routes successfully.
+- Carry-forward rule: Never run concurrent Next production builds in one worktree. Parallelize builds across isolated worktrees, or wait for the current worktree's `.next/lock` owner to finish before retrying.
+
+### 2026-07-26 — Provider route integration build fix
+
+- Branch/commit: `agent/patchcad-providers` after `b4af09e`
+- Attempt: Reproduce and fix the Next 16 production-build failure caused by unsupported exports from App Router route modules.
+- Result: worked
+- Evidence: `npm run build` compiled, then failed Next route type checking because `src/app/api/plan/route.ts` exported `createPlanRoute`; the research route exposed the same invalid factory pattern. A focused route-surface test was RED for `createPlanRoute` and `createResearchRoute`, then GREEN after moving both injectable factories to server-only provider modules. The exact production build subsequently completed and emitted dynamic `/api/plan` and `/api/research` routes.
+- Carry-forward rule: Files under `src/app/**/route.ts` may export only supported HTTP handlers and Next route configuration fields. Keep testable dependency-injected handler factories in server modules outside the App Router route-file surface.
+
+### 2026-07-26 — OpenAI structured local patch planning
+
+- Branch/commit: `agent/patchcad-providers` Task 7
+- Attempt: Add a server-only Responses API adapter using `responses.parse` and `zodTextFormat`, with an injected adapter boundary and deterministic plan validation before any OpenAI provenance is returned.
+- Result: worked
+- Evidence: The integration suite was RED on the missing route, then passed 9 behavior cases covering validated plans, malformed provider output, refusal, incomplete output, protected targets, missing configuration, malformed/oversized requests, and secret-free error envelopes. `npm run typecheck` exited 0.
+- Carry-forward rule: The installed OpenAI 6.49 SDK exposes parsed output at `response.output_parsed`; refusal must be detected from `message` output content with `type: "refusal"`, and every parsed plan must still pass `validatePlan`.
+
+### 2026-07-26 — Task 7 Fix Round 1: bounded requests and controlled rationale
+
+- Branch/commit: `agent/patchcad-providers` after `5c9a4d9`
+- Attempt: Prevent unbounded plan-route JSON consumption and prevent arbitrary model rationale from crossing the provider service boundary.
+- Result: worked
+- Evidence: Declared-oversize, missing-header, and falsified-header body tests were RED with `502` because the provider fake was reached, then GREEN with an early 64 KiB `Content-Length` check and an independent streaming byte cap. Resize and add-hole rationale tests were RED with executable model prose in the response, then GREEN after replacing it with operation-specific deterministic summaries. The focused suite passed 14 tests and type checking exited 0.
+- Carry-forward rule: All provider routes must bound bytes while reading, regardless of headers. Treat structured-output string fields as untrusted provider text; return only controlled local summaries derived from validated semantic and numeric fields.
+
+### 2026-07-26 — Exa-grounded component research
+
+- Branch/commit: `agent/patchcad-providers` Task 8
+- Attempt: Add a server-only Exa adapter and a route that returns bounded, normalized web evidence only, with canonical URL deduplication and safe upstream error handling.
+- Result: worked
+- Evidence: The route test was RED on the missing research route, then passed 4 behavior cases for constrained mounting-spec search, title/URL validation, canonical deduplication, five-source bounding, missing configuration, and redacted timeout failure. `npm run typecheck` exited 0.
+- Carry-forward rule: Exa 2.16 retains `searchAndContents` as a deprecated compatibility wrapper; it accepts the requested `{ type: "auto", numResults: 5, text: { maxCharacters } }` call shape. Keep results as evidence only; no Exa output may modify CAD geometry.
+
+### 2026-07-26 — Task 8 Fix Round 1: constrained Exa query composition
+
+- Branch/commit: `agent/patchcad-providers` after `714cc08`
+- Attempt: Prevent unrelated user research text from reaching Exa as the complete search query while preserving a single provider call and bounded growth.
+- Result: worked
+- Evidence: The adapter-boundary assertion was RED with the raw `M4 mounting bracket` query, then GREEN with an exact fixed composition that isolates the phrase as data and focuses retrieval on mounting-hole dimensions, bolt pattern, units, datasheets, and mechanical drawings. The focused suite passed 4 tests and type checking exited 0.
+- Carry-forward rule: Compose provider research queries from a fixed domain frame plus the bounded user phrase exactly once; treat user text as isolated search data, never as provider instructions.
 ### 2026-07-26 — Honest offline patch parser
 
 - Branch/commit: `agent/patchcad-foundation` Task 4 worktree
@@ -224,3 +358,29 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: worked
 - Evidence: `npm test -- tests/unit/schemas.test.ts` passed 11 tests, and `npm run typecheck` exited 0.
 - Carry-forward rule: Treat all untrusted CAD, plan, and research payloads as strict millimetre-only boundaries; use `PatchPlanSchema` as the only accepted executable intent and keep provider credentials out of every shared contract and response type.
+
+## Browser kernel workstream
+
+### 2026-07-26 — Exact OpenCascade browser worker
+
+- Branch/commit: `agent/patchcad-kernel` at `f5f6e33`
+- Attempt: Add a strict transferable worker protocol, a single-initialization Replicad/OpenCascade worker, exact bracket/STEP operations, imported-solid session holes rebuilt from an untouched B-rep, and lazy React lifecycle management.
+- Result: worked with browser-runtime verification carried forward
+- Evidence: The protocol suite was RED because `@/lib/cad/worker-protocol` did not exist, then GREEN with 7 tests covering UUID IDs, unknown/extra message rejection, finite typed geometry, triangle/index invariants, bounds, face groups, and bracket hole anchors. The final repository suite passed 46 tests; type checking and lint exited 0. `npm run build` emitted `.next/static/chunks/cad.worker.js`, the pinned 10 MB `public/cad-runtime/replicad_single-0.23.0.wasm`, and no CAD runtime signatures in `.next/server` JavaScript. A direct jsdom capability check reported `Worker: "undefined"` while `WebAssembly: "object"`, so Vitest cannot execute the real browser worker.
+- Carry-forward rule: Task 12 must exercise initialize, exact bracket build, STEP export/re-import, one-solid STEP import, planar session-hole add/resize, non-planar/pre-existing-hole rejection, and transferable mesh face groups in Playwright against the emitted worker and real pinned WASM. Do not add a fake production kernel or import Replicad/OCCT from any server graph.
+
+### 2026-07-26 — Browser kernel Fix Round 1
+
+- Branch/commit: `agent/patchcad-kernel` after `b572ab5`
+- Attempt: Close reviewed concurrency, lifecycle, correlation, mesh-range, and failed-import ownership gaps with independent RED/GREEN regressions.
+- Result: worked with real browser/WASM execution carried forward
+- Evidence: Face-group tests were RED with five malformed layouts accepted, dispatcher tests were RED because no runtime dispatcher existed, three hook lifecycle tests were RED with zero worker terminations, and ownership was RED on the missing guarded-transfer module. Each became GREEN after its minimal fix. Independent review then found commit-before-reply state mutations: synchronous prepare-before-adopt tests drove atomic build/import/session-cut meshes, and asynchronous tests drove atomic snapshot STEP export. Final re-review was CLEAN. Non-finite-normal and inverted-bounds fixtures were mutation-checked RED with their validators temporarily disabled, then restored GREEN. The final suite passed 65 tests across 7 files; typecheck, lint, and the worker-enabled production build exited 0. The emitted client worker retains the pinned WASM URL and strict error codes, while `.next/server` JavaScript has no CAD runtime signatures.
+- Carry-forward rule: Treat invalid replies, crashes, and timeouts as fatal worker generations; serialize every exact-kernel request; retain caller UUIDs for correlatable invalid requests; require face groups to cover the triangle stream exactly; delete unadopted OCCT resources on every failure. Task 12 must still run the real worker and WASM in Playwright rather than treating controlled jsdom lifecycle coverage as kernel execution.
+
+### 2026-07-26 — Magic Circle CAD selection
+
+- Branch/commit: `agent/patchcad-kernel` at `123d233` plus the reviewed lifecycle follow-up
+- Attempt: Render transferred worker geometry without copying its typed arrays, fit a Z-up Three.js scene, project semantic hole anchors into CSS pixels, and resolve a persistent pointer-captured SVG circle into one strict resize-hole selection envelope.
+- Result: worked with real-browser visual verification carried forward
+- Evidence: The projection suite was RED on the missing module, then GREEN with six pure tests for in-circle nearest selection, rejection, deterministic ties, client-to-canvas coordinates, and the 8 px minimum radius. Review regressions were RED for lost pointer capture and stale state after mesh replacement, then GREEN after deliberate-release tracking and mesh-revision invalidation. The final suite passed 74 tests across 10 files; typecheck, lint, the production build, and whitespace checks exited 0.
+- Carry-forward rule: Keep semantic selection independent of Three.js scene traversal; publish CSS-pixel anchors only when their projection changes; remount drawing state and invalidate external selections whenever the mesh generation changes. Task 12 must visually exercise fit-to-view, orbit/draw handoff, persistent SVG selection, Escape/capture-loss cancellation, and selected-hole highlighting in a real browser.

@@ -1,7 +1,5 @@
+import { PatchWorkspace } from "@/components/workspace/PatchWorkspace";
+
 export default function Page() {
-  return (
-    <main>
-      <h1>PatchCAD</h1>
-    </main>
-  );
+  return <PatchWorkspace />;
 }

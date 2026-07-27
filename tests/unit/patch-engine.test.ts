@@ -74,13 +74,35 @@ describe("deterministic PatchCAD patch engine", () => {
     });
   });
 
+  it("keeps selected holes outside the plan target protected", () => {
+    // Break caught: exempting the full selection from locality checks can hide collateral edits.
+    const { report } = applyPatch({
+      before: createDemoBracket(),
+      selection: {
+        ...topFaceSelection,
+        editableFeatureIds: ["hole:nw", "hole:ne"],
+      },
+      plan: {
+        version: 1,
+        operation: "resize_hole",
+        targetFeatureId: "hole:nw",
+        diameterMm: 8,
+        rationale: "Increase clearance.",
+      },
+    });
+
+    expect(report.protectedFingerprints.map((fingerprint) => fingerprint.id)).toContain(
+      "hole:ne",
+    );
+  });
+
   it("rejects a same-diameter resize as a structured no-effect plan", () => {
-    const input = {
+    const input: Parameters<typeof validatePlan>[0] = {
       before: createDemoBracket(),
       selection: { ...topFaceSelection, editableFeatureIds: ["hole:nw"] },
       plan: {
         version: 1,
-        operation: "resize_hole" as const,
+        operation: "resize_hole",
         targetFeatureId: "hole:nw",
         diameterMm: 6,
         rationale: "Keep the current hole size.",

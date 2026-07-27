@@ -85,13 +85,10 @@ export function validatePlan(input: {
       return { valid: false, code: "TARGET_OUTSIDE_SELECTION" };
     }
 
-    return validateCandidate(before, {
-      id: nextAddedHoleId(before),
-      kind: "through_hole",
-      centerMm: { ...plan.centerMm, z: 0 },
-      diameterMm: plan.diameterMm,
-      axis: { x: 0, y: 0, z: 1 },
-    });
+    return validateCandidate(
+      before,
+      buildAddedHole(plan, nextAddedHoleId(before)),
+    );
   }
 
   return { valid: false, code: "UNSUPPORTED_OPERATION" };
@@ -122,19 +119,13 @@ export function applyPatch(input: {
           ...cloneSnapshot(before),
           holes: [
             ...before.holes.map(cloneHole),
-            {
-              id: nextAddedHoleId(before),
-              kind: "through_hole" as const,
-              centerMm: { ...plan.centerMm, z: 0 },
-              diameterMm: plan.diameterMm,
-              axis: { x: 0 as const, y: 0 as const, z: 1 as const },
-            },
+            buildAddedHole(plan, nextAddedHoleId(before)),
           ],
         };
   const editableFeatureIds =
     plan.operation === "resize_hole"
-      ? selection.editableFeatureIds
-      : [...selection.editableFeatureIds, nextAddedHoleId(before)];
+      ? [plan.targetFeatureId]
+      : [nextAddedHoleId(before)];
   const localityReport = verifyLocality(before, after, editableFeatureIds);
 
   return {
@@ -228,6 +219,19 @@ function nextAddedHoleId(snapshot: BracketSnapshot): `hole:added-${number}` {
   }, 0);
 
   return `hole:added-${largestExistingIndex + 1}`;
+}
+
+function buildAddedHole(
+  plan: Extract<PatchPlan, { operation: "add_hole" }>,
+  id: HoleFeature["id"],
+): HoleFeature {
+  return {
+    id,
+    kind: "through_hole",
+    centerMm: { ...plan.centerMm, z: 0 },
+    diameterMm: plan.diameterMm,
+    axis: { x: 0, y: 0, z: 1 },
+  };
 }
 
 function cloneSnapshot(snapshot: BracketSnapshot): Omit<BracketSnapshot, "holes"> {

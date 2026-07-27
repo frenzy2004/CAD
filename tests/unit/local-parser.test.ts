@@ -112,7 +112,10 @@ describe("honest offline PatchCAD command parser", () => {
     {
       name: "a resize with multiple selected holes",
       prompt: "make this hole 8 mm",
-      selection: { ...selectedHole, editableFeatureIds: ["hole:nw", "hole:ne"] },
+      selection: {
+        ...selectedHole,
+        editableFeatureIds: ["hole:nw", "hole:ne"],
+      } satisfies SelectionEnvelope,
       code: "AMBIGUOUS_SELECTION",
     },
     {
@@ -126,6 +129,16 @@ describe("honest offline PatchCAD command parser", () => {
     expect(parseLocalPatch(prompt, selection)).toEqual({
       source: "local-parser",
       error: { code },
+    });
+  });
+
+  it("does not misreport an overlong rationale as an invalid dimension", () => {
+    // Break caught: mapping every schema issue to INVALID_DIMENSION hides non-dimension failures.
+    const prompt = `make${" ".repeat(501)}this hole 8 mm`;
+
+    expect(parseLocalPatch(prompt, selectedHole)).toEqual({
+      source: "local-parser",
+      error: { code: "UNSUPPORTED_OPERATION" },
     });
   });
 });

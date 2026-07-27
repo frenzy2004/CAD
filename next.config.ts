@@ -16,15 +16,6 @@ const nextConfig: NextConfig = {
   },
   webpack(config, { isServer }) {
     if (!isServer) {
-      const defaultEntry = config.entry;
-      config.entry = async () => {
-        const entries = await defaultEntry();
-        entries["cad-worker"] = {
-          import: "./src/workers/cad.worker.ts",
-          filename: "static/chunks/cad.worker.js",
-        };
-        return entries;
-      };
       config.experiments = {
         ...config.experiments,
         asyncWebAssembly: true,

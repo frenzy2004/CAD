@@ -22,7 +22,7 @@ const selection: SelectionEnvelope = {
 };
 
 const plan: PatchPlan = {
-  version: 1,
+  version: 2,
   operation: "resize_hole",
   targetFeatureId: "hole:nw",
   diameterMm: 8,

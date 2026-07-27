@@ -27,7 +27,8 @@ export function ResearchPanel({
         ) : null}
         {status === "unavailable" ? (
           <p className="m-0 text-sm text-stone-400">
-            Exa is not configured. Geometry remains independent of research.
+            Exa research is unavailable. Geometry remains independent of
+            research.
           </p>
         ) : null}
         {status === "error" ? (

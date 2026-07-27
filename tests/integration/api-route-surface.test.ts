@@ -22,6 +22,11 @@ const supportedRouteExports = new Set([
 ]);
 
 describe("Next route module surfaces", () => {
+  it("bounds plan and research provider functions to a short platform deadline", () => {
+    expect(planRoute.maxDuration).toBe(15);
+    expect(researchRoute.maxDuration).toBe(15);
+  });
+
   it.each([
     ["health", healthRoute],
     ["plan", planRoute],

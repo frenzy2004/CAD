@@ -64,7 +64,7 @@ export class PlanService {
     });
     if (!validation.valid) return { ok: false, code: "AI_UNSAFE_PLAN" };
 
-    return { ok: true, plan: withControlledRationale(parsed.data) };
+    return { ok: true, plan: withControlledRationale(validation.plan) };
   }
 }
 
@@ -83,6 +83,6 @@ function withControlledRationale(plan: PatchPlan): PatchPlan {
 
   return {
     ...plan,
-    rationale: `Add a ${plan.diameterMm} mm hole on ${plan.targetFaceId} at (${plan.centerMm.x}, ${plan.centerMm.y}) mm.`,
+    rationale: `Add a ${plan.diameterMm} mm hole at the selected point on ${plan.targetFaceId}.`,
   };
 }

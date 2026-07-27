@@ -1,4 +1,13 @@
-# PatchCAD MVP Implementation Plan
+# PatchCAD MVP Implementation Plan (Historical and Superseded)
+
+> **Superseded provider setup:** This 2026-07-26 plan is retained only as
+> implementation history. Its owner-managed `OPENAI_API_KEY` and `EXA_API_KEY`
+> instructions are obsolete and must not be used for current setup. PatchCAD
+> now accepts browser-session BYOK credentials per request, retains no owner
+> provider credential, and requires an edge/WAF rate limit for public
+> multi-instance deployment. Follow the current README and the 2026-07-27 BYOK
+> design instead.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship a production Vercel application where a user circles a hole on an exact browser-generated bracket, asks for a local change in plain language, receives a typed OpenAI patch plan grounded by optional Exa research, previews a deterministic OpenCascade modification, verifies that no protected feature moved, and exports the result; also ship a FreeCAD add-on bridge for applying the same plan contract to desktop CAD.

@@ -50,6 +50,44 @@ def _diameter_dialog(title: str, initial: float) -> float | None:
     return float(value) if accepted else None
 
 
+def _show_bridge_token(host: str, port: int, token: str) -> None:
+    widgets = _qt_widgets()
+    dialog = widgets.QDialog()
+    dialog.setWindowTitle("PatchCAD local bridge token")
+    layout = widgets.QVBoxLayout(dialog)
+
+    instructions = widgets.QLabel(
+        f"Bridge listening at http://{host}:{port}.\n\n"
+        "Copy this one-time in-memory bearer token into your local client. "
+        "It is never written to the FreeCAD console."
+    )
+    instructions.setWordWrap(True)
+    layout.addWidget(instructions)
+
+    token_field = widgets.QLineEdit(token)
+    token_field.setReadOnly(True)
+    layout.addWidget(token_field)
+
+    button_box = widgets.QDialogButtonBox()
+    copy_button = button_box.addButton(
+        "Copy bearer token", widgets.QDialogButtonBox.ActionRole
+    )
+    copy_button.clicked.connect(
+        lambda: widgets.QApplication.clipboard().setText(token)
+    )
+    layout.addWidget(button_box)
+
+    close_button = widgets.QPushButton("Close")
+    close_button.clicked.connect(dialog.accept)
+    layout.addWidget(close_button)
+
+    execute = getattr(dialog, "exec", None)
+    if callable(execute):
+        execute()
+    else:
+        dialog.exec_()
+
+
 class _CreatePatchCommand:
     operation = "add_hole"
 
@@ -141,17 +179,26 @@ class StartBridgeCommand:
         global _bridge_runtime
         if _bridge_runtime is not None:
             return
+        runtime: GuiBridgeRuntime | None = None
         try:
             runtime = GuiBridgeRuntime(_service.dispatch)
             runtime.start()
-            _bridge_runtime = runtime
             host, port = runtime.address
+            _show_bridge_token(host, port, runtime.token)
+            _bridge_runtime = runtime
             _message(
                 "info",
-                f"bridge listening on http://{host}:{port}; in-memory bearer token: {runtime.token}",
+                f"bridge listening at http://{host}:{port}; "
+                "bearer token shown in a one-time dialog",
             )
-        except Exception as exc:
-            _message("error", str(exc))
+        except Exception:
+            if runtime is not None:
+                try:
+                    runtime.close()
+                except Exception:
+                    pass
+            _bridge_runtime = None
+            _message("error", "could not start local bridge")
 
 
 class StopBridgeCommand:

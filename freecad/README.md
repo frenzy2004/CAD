@@ -70,10 +70,11 @@ outside FreeCAD's undo transaction. The CAD transaction remains committed.
 
 ## Authenticated localhost bridge
 
-Run **Start Local Bridge** from the PatchCAD workbench. FreeCAD prints the exact
-loopback URL and a random in-memory bearer token to its local console. Treat
-that token as temporary secret material. **Stop Local Bridge** stops the server
-and discards it.
+Run **Start Local Bridge** from the PatchCAD workbench. FreeCAD displays the
+exact loopback URL and a random in-memory bearer token in a one-time dialog.
+Use the explicit **Copy bearer token** button if a local client needs it; the
+token is never written to the FreeCAD console. Treat it as temporary secret
+material. **Stop Local Bridge** stops the server and discards it.
 
 The server:
 

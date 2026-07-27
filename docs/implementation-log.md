@@ -17,6 +17,27 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## FreeCAD workstream
 
+### 2026-07-27 23:48 +08 — Bridge bearer-token console disclosure
+
+- Branch/commit: `agent/patchcad-freecad` before the token-handoff repair
+- Attempt: Revalidate the local bridge's token path and remove bearer-token
+  disclosure from FreeCAD's persistent console output while retaining a usable
+  handoff for a manually connected local client.
+- Result: worked in the FreeCAD-independent command harness; native GUI smoke
+  remains unrun
+- Evidence: `StartBridgeCommand` generated a random token, started the
+  loopback bridge, and interpolated `runtime.token` directly into `_message`,
+  which writes to the FreeCAD console. The focused RED test proved no token
+  dialog existed. The repair displays the endpoint and a read-only token field
+  in a one-time modal, copies only after an explicit button click, and logs
+  only a token-free endpoint/status message. All three focused command tests
+  and the 56-test FreeCAD-independent suite pass without exposing a real token.
+- Carry-forward rule: Bearer tokens may be deliberately revealed only through
+  the transient local GUI handoff. Never write them to console output, files,
+  URLs, exceptions, audit records, or automatic clipboard operations. Confirm
+  the dialog under an installed FreeCAD release before calling the GUI path
+  fully runtime-verified.
+
 ### 2026-07-27 09:35 +08 — Native FreeCAD 1.1 runtime acquisition
 
 - Branch/commit: `agent/patchcad-freecad` after `12476b7`

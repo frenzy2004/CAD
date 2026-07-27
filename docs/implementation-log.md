@@ -210,6 +210,20 @@ This is the shared memory for implementation branches. Add an entry whenever an 
   compatible Next/ESLint plugin release absorbs them. Treat the remaining
   lint-chain advisory as a development-environment risk; do not claim the full
   dependency graph is audit-clean.
+### 2026-07-28 00:17 +08 — Production dependency audit closure
+
+- Branch/commit: `agent/production-dependency-overrides`
+- Attempt: Reproduce the production dependency audit failure on current `main`,
+  then update only the affected transitive packages without downgrading Next.
+- Result: worked
+- Evidence: The RED audit reported three high findings through
+  `next@16.2.12` resolving `postcss@8.4.31` and `sharp@0.34.5`. Overrides now
+  pin `postcss@8.5.23` and `sharp@0.35.3`; `npm audit --omit=dev --json`
+  reports zero production vulnerabilities. Final verification passed 150 web
+  tests, typecheck, lint, production build, and all five Playwright flows.
+- Carry-forward rule: Keep these transitive overrides until a compatible Next
+  release absorbs the patched versions. Do not accept the audit tool's suggested
+  Next downgrade as a security fix.
 
 ### 2026-07-27 23:33 — Clean-worktree CAD startup and selection-safety reconciliation
 

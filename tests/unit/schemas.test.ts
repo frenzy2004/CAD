@@ -16,7 +16,7 @@ describe("PatchCAD contracts", () => {
     {
       name: "resizes a selected hole",
       plan: {
-        version: 1,
+        version: 2,
         operation: "resize_hole",
         targetFeatureId: "hole:nw",
         diameterMm: 8,
@@ -26,10 +26,10 @@ describe("PatchCAD contracts", () => {
     {
       name: "adds a hole on the top face",
       plan: {
-        version: 1,
+        version: 2,
         operation: "add_hole",
         targetFaceId: "face:top",
-        centerMm: { x: 50, y: 32 },
+        location: "selection",
         diameterMm: 5,
         rationale: "Add a centered mounting point.",
       },
@@ -43,7 +43,7 @@ describe("PatchCAD contracts", () => {
       name: "negative hole diameters",
       schema: PatchPlanSchema,
       input: {
-        version: 1,
+        version: 2,
         operation: "resize_hole",
         targetFeatureId: "hole:nw",
         diameterMm: -1,
@@ -54,7 +54,7 @@ describe("PatchCAD contracts", () => {
       name: "unknown operations",
       schema: PatchPlanSchema,
       input: {
-        version: 1,
+        version: 2,
         operation: "move_hole",
         targetFeatureId: "hole:nw",
         diameterMm: 8,
@@ -75,7 +75,7 @@ describe("PatchCAD contracts", () => {
       name: "malformed semantic feature IDs",
       schema: PatchPlanSchema,
       input: {
-        version: 1,
+        version: 2,
         operation: "resize_hole",
         targetFeatureId: "hole:",
         diameterMm: 8,
@@ -84,6 +84,20 @@ describe("PatchCAD contracts", () => {
     },
   ])("rejects $name", ({ schema, input }) => {
     expect(schema.safeParse(input).success).toBe(false);
+  });
+
+  it("rejects provider coordinates in a version-2 add-hole plan", () => {
+    expect(
+      PatchPlanSchema.safeParse({
+        version: 2,
+        operation: "add_hole",
+        targetFaceId: "face:top",
+        location: "selection",
+        centerMm: { x: 2 ** 39, y: 2 ** 39 },
+        diameterMm: 5,
+        rationale: "Move it.",
+      }).success,
+    ).toBe(false);
   });
 
   it("round-trips a snapshot through JSON without data loss", () => {

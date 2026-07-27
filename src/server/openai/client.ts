@@ -8,13 +8,18 @@ import type { OpenAIConfiguration } from "@/lib/env";
 import type { OpenAIModelAdapter } from "./plan-service";
 
 export function createOpenAIModelAdapter(configuration: OpenAIConfiguration): OpenAIModelAdapter {
-  const openai = new OpenAI({ apiKey: configuration.apiKey });
+  const openai = new OpenAI({
+    apiKey: configuration.apiKey,
+    timeout: 12_000,
+    maxRetries: 0,
+  });
 
   return {
     async parse({ input }) {
       const response = await openai.responses.parse({
         model: configuration.model,
         input,
+        max_output_tokens: 1_200,
         text: { format: zodTextFormat(PatchPlanSchema, "patch_plan") },
       });
 

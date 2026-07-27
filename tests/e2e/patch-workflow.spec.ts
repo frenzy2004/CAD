@@ -522,13 +522,12 @@ test("keeps the full editing workspace usable at 390 by 844", async ({
   ).toBeVisible();
 });
 
-test("@smoke exposes a safe health response", async ({ request }) => {
+test("@smoke exposes static BYOK provider modes", async ({ request }) => {
   const response = await request.get("/api/health");
   expect(response.status()).toBe(200);
   expect(await response.json()).toEqual({
     status: "ok",
     cadRuntime: "browser-wasm",
-    openaiConfigured: expect.any(Boolean),
-    exaConfigured: expect.any(Boolean),
+    providers: { openai: "byok", exa: "byok" },
   });
 });

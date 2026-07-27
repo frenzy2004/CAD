@@ -15,6 +15,32 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+### 2026-07-27 23:33 — Clean-worktree CAD startup and selection-safety reconciliation
+
+- Branch/commit: `agent/byok-provider-hardening` before the reconciliation commit
+- Attempt: Validate the BYOK branch in an isolated checkout, reconcile it with
+  the verified recovery baseline, and rerun the exact browser workflow before
+  publishing it.
+- Result: worked
+- Evidence: The branch's manual `cad-worker` webpack entry failed to start a
+  clean Next development server with `Entry cad-worker depends on main, but
+  this entry was not found`; removing the redundant entry restored worker
+  startup. The restored worker now owns and validates every boolean result as
+  one solid and uses OpenCascade distance evaluation to reject an add-hole
+  point that is not on the selected planar face. The deterministic Playwright
+  configuration isolates its local server and can target an explicit external
+  preview. During the full browser run, boolean `shadows` produced a
+  deprecated Three.js `PCFSoftShadowMap` console error; the existing exact
+  offline STEP smoke test failed, then passed after selecting the supported
+  `basic` shadow map. Final verification passed 21 Vitest files / 150 tests,
+  typecheck, lint, a production build, and all 5 Playwright flows, including
+  imported STEP round-trip, face-local edits, mobile layout, and BYOK health.
+- Carry-forward rule: Do not manually inject a Next worker entry when module
+  worker loading already supplies it. Keep exact point-on-face validation and
+  single-solid ownership at the worker boundary; a face ID alone never
+  authorizes an arbitrary edit location. Keep browser tests on their isolated
+  port and use `PLAYWRIGHT_BASE_URL` for a protected preview once authenticated.
+
 ### 2026-07-27 13:52 — Public BYOK provider boundary and recovery hardening
 
 - Branch/commit: `recovery/selection-owned-add-hole` through `cc4a940`

@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:freecad": "PYTHONPATH=freecad/PatchCAD python3 -m unittest discover -s freecad/PatchCAD/freecad/PatchCAD/tests -v",
+    "test:freecad:native": "node scripts/run-freecad-native-smoke.mjs",
     "verify": "npm run lint && npm run typecheck && npm test && npm run test:freecad && npm run build"
   },
   "engines": {

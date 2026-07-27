@@ -15,6 +15,201 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## Baseline discoveries
 
+## FreeCAD workstream
+
+### 2026-07-27 23:48 +08 — Bridge bearer-token console disclosure
+
+- Branch/commit: `agent/patchcad-freecad` before the token-handoff repair
+- Attempt: Revalidate the local bridge's token path and remove bearer-token
+  disclosure from FreeCAD's persistent console output while retaining a usable
+  handoff for a manually connected local client.
+- Result: worked in the FreeCAD-independent command harness; native GUI smoke
+  remains unrun
+- Evidence: `StartBridgeCommand` generated a random token, started the
+  loopback bridge, and interpolated `runtime.token` directly into `_message`,
+  which writes to the FreeCAD console. The focused RED test proved no token
+  dialog existed. The repair displays the endpoint and a read-only token field
+  in a one-time modal, copies only after an explicit button click, and logs
+  only a token-free endpoint/status message. All three focused command tests
+  and the 56-test FreeCAD-independent suite pass without exposing a real token.
+- Carry-forward rule: Bearer tokens may be deliberately revealed only through
+  the transient local GUI handoff. Never write them to console output, files,
+  URLs, exceptions, audit records, or automatic clipboard operations. Confirm
+  the dialog under an installed FreeCAD release before calling the GUI path
+  fully runtime-verified.
+
+### 2026-07-27 23:58 +08 — Bridge request concurrency and mutation boundaries
+
+- Branch/commit: `agent/patchcad-freecad` after the token-handoff repair
+- Attempt: Reproduce the reported in-process request-cache contention and
+  direct service/transaction edge cases before changing the bridge contract.
+- Result: worked
+- Evidence: The RED concurrency tests showed a blocked `req-1` held the sole
+  request-cache lock while unrelated `req-2` could not begin, and a conflicting
+  same-ID request could not be rejected until the first GUI operation released.
+  The cache now coordinates only same-ID in-flight work with a completion event:
+  independent requests proceed, compatible duplicates replay one result, and
+  conflicting IDs fail immediately. Additional RED tests showed that a
+  `resize_hole` point was accepted and then ignored, direct `NaN`/infinite
+  diameters reached mutation code, and cleanup exceptions hid the primary CAD
+  error. The internal dispatcher also coerced booleans and numeric strings
+  before validation, while a 400-digit integer overflowed before it. The
+  protocol now refuses resize points, numeric boundaries translate conversion
+  overflow to a positive-finite validation failure, dispatcher inputs reach the
+  shared validator unchanged, and rollback/recompute cleanup preserves the
+  original exception. The complete FreeCAD-independent suite passed 66 tests
+  plus Python compilation. The separate malformed internal dispatcher payload
+  is not reachable from the public HTTP path and was left out of this narrow
+  repair.
+- Carry-forward rule: Never hold a global idempotency lock across GUI work;
+  only duplicate request IDs synchronize. Keep point ownership explicit by
+  operation, validate finite dimensions at every public mutation boundary, and
+  preserve the initiating CAD failure when cleanup also fails.
+
+### 2026-07-27 09:35 +08 — Native FreeCAD 1.1 runtime acquisition
+
+- Branch/commit: `agent/patchcad-freecad` after `12476b7`
+- Attempt: Acquire the official Homebrew FreeCAD 1.1.1 cask into a workspace-local app directory so the real stepped-pilot and persisted-id smoke cases could run against native FreeCAD/OCCT APIs.
+- Result: blocked by managed-machine permissions
+- Evidence: Homebrew identifies the cask as `freecad 1.1.1`, but installation cannot update the Homebrew API cache or write the shared Homebrew prefix, cache, or logs. The command exited 1 before downloading or installing any artifact. A public GitHub release metadata query was also denied by this environment's terminal network policy. No ownership change, sudo operation, or global package modification was attempted.
+- Carry-forward rule: Do not repair shared Homebrew ownership or bypass the managed terminal network policy. Keep the bridge branch unmerged until an environment with FreeCAD 1.1 can run the native headless geometry, duplicate-id, recompute, undo, and GUI smoke checks.
+
+### 2026-07-27 09:20 +08 — Post-review through-hole and persisted-replay closure
+
+- Branch/commit: `agent/patchcad-freecad` after `363748b`, before the follow-up commit
+- Attempt: Reproduce two independent-review boundary defects before changing production code: a near-full-width stepped pilot below a selected 5 mm cylindrical wall, and two persisted `RequestId` objects in one document.
+- Result: worked
+- Evidence: Both new behavior tests were RED first: the 4.9 mm pilot raised no `SelectionError`, and same-document duplicate IDs silently replayed the first patch. The through-hole proof now samples just inside the selected wall using a tolerance-scaled radial margin in addition to center and mid-radius samples; all seven selection tests are GREEN. Request-id discovery now gathers every persisted PatchCAD object before replay and fails closed when any scope has more than one; all five persisted-idempotency tests are GREEN. The 34 pure Python FreeCAD-independent tests and compile step passed. A full 53-test discovery run had 15 managed-sandbox `127.0.0.1` bind errors before the real HTTP tests could execute; those failures are environmental, not assertions from the bridge.
+- Carry-forward rule: Treat a near-wall radial void check as required topology evidence for through-hole resize, but do not claim it replaces real FreeCAD/OCCT topology smoke coverage. Never choose an arbitrary first match for persisted request replay; ambiguous duplicates in one or several open documents must fail closed.
+
+### 2026-07-27 08:56 +08 — Main reconciliation and bounded merged-tree verification
+
+- Branch/commit: `agent/patchcad-freecad` after merging `origin/main`
+- Attempt: Resolve the PR conflict by preserving both implementation-log histories, then rerun the combined web and FreeCAD-independent gates.
+- Result: worked, with the known managed-loopback restriction
+- Evidence: The only merge conflict was `docs/implementation-log.md`; both histories were retained and `git diff --check` passed. The first merged-tree `npm run test:freecad` ran all 51 cases but the managed sandbox denied 15 real `127.0.0.1` binds before those tests could execute; the remaining 36 non-socket tests passed in a focused rerun. The exact pre-merge FreeCAD fix tree had already passed all 51/51 with approved loopback access, and the merge changed no FreeCAD source or test file. On the reconciled tree, the web suite passed 18 files and 122 tests, typecheck passed, and warning-free lint passed.
+- Carry-forward rule: Treat a loopback `PermissionError` as an environment gate only when the same immutable FreeCAD source/test tree has a recorded 51/51 approved run and the reconciliation changes no FreeCAD path. Never convert that into a claim that real FreeCAD/OCCT/GUI runtime tests ran.
+
+### 2026-07-26 20:55 +08 — Task 11 Fix Round 2 deadline, replay, audit, and topology gates
+
+- Branch/commit: `agent/patchcad-freecad` after `1a528e2` (this fix commit)
+- Attempt: Reproduce all five validated review findings with focused behavior tests before tightening the FreeCAD-independent bridge and service.
+- Result: worked
+- Evidence: The audit regression was RED because an invalid UTF-8 sidecar escaped as `UnicodeDecodeError(... invalid start byte)` after the CAD transaction had committed; wrapping `UnicodeError` as `AuditWriteError` made it GREEN with `AUDIT_WRITE_FAILED` while retaining the new diameter and one commit. The queued-work regression was RED because the expired item executed (`['create_patch'] != []`); an absolute `time.monotonic()` deadline carried by each item and checked under its lock made all four dispatcher tests GREEN. The real slow-trickle HTTP regression was RED after the required loopback-permission rerun (`201 != 408`); deadline-aware `read1` chunks made it GREEN with 408 and zero dispatches. Two completed-body parse seams were then RED (`POST 201 != 408`; `PATCH 200 != 408`); carrying the same deadline through parsing and checking it at the dispatch boundary made both GREEN with zero dispatches. Global replay tests were RED because target resolution followed the new active document, changed document/payload requests raised the test sentinel instead of `ProtocolError`, and duplicate persisted IDs raised no conflict; scanning every open document before target resolution made all four persisted-idempotency tests GREEN. The drill-tip regression was RED with `SelectionError not raised`; requiring two cylindrical boundary loops, one planar adjacent face at each end, and an open sampled cross-section also rejected an internal shoulder with a smaller pilot opening. The first topology seam used the wrong `"Face"` argument and failed the acceptance case; current FreeCAD `TopoShapePy::ancestorsOfType` requires a shape subtype, so `type(face)` made the six selection tests GREEN.
+- Carry-forward rule: A queued GUI mutation and an HTTP body both have one absolute monotonic deadline. Request IDs are global across all open FreeCAD documents and ambiguous duplicates fail closed. Existing-hole resize requires topology plus cross-section evidence for two straight planar openings; centerline emptiness alone is never through-hole proof. Audit decoding failures are post-commit `AUDIT_WRITE_FAILED` responses, not transaction rollbacks.
+
+### 2026-07-26 20:55 +08 — Task 11 Fix Round 2 verification and runtime boundary
+
+- Branch/commit: `agent/patchcad-freecad` after `1a528e2` (this fix commit)
+- Attempt: Run the complete standard-Python suite, compilation, add-on metadata, lazy-import, and executable-availability checks.
+- Result: worked for FreeCAD-independent checks; FreeCAD runtime remains unavailable
+- Evidence: The restricted first `npm run test:freecad` attempt reported 13 loopback-bind `PermissionError: [Errno 1] Operation not permitted` errors while all non-socket tests passed. The final approved loopback rerun completed 51/51 tests in 7.714 seconds. `python3 -m compileall -q` passed, `xmllint --noout` passed, and metadata resolved to `PatchCADWorkbench|1.1.0|part`. Importing `protocol`, `audit`, and `bridge` left `FreeCAD`, `FreeCADGui`, and `Part` absent from `sys.modules`. No `FreeCADCmd`, `freecadcmd`, `FreeCAD`, or `freecad` executable was found.
+- Carry-forward rule: Keep the socket tests real and rerun them through approved loopback permission in this managed environment. These checks do not substitute for FreeCAD 1.1 geometry, recompute, undo, or GUI smoke tests; continue to report those runtime checks as unrun.
+
+### 2026-07-26 19:17 +08 — Task 11 Fix Round 1 geometry and recompute gates
+
+- Branch/commit: `agent/patchcad-freecad` after `7673f0e`
+- Attempt: Reproduce and correct exterior sleeves in shrink-hole fills and stale-shape commits after failed FeaturePython recomputes.
+- Result: worked
+- Evidence: Three initial seam tests were RED: the discrete geometry result retained `exterior-sleeve`, and update/toggle mutations committed despite a non-advancing execution token or `Invalid` state. Exact hole-wall axial fill bounds made the geometry seam GREEN. A persisted execution counter was rejected before commit because mutating it inside `execute()` would add saved-state side effects; two additional RED seams required a Proxy-local token and successful commit after that transient token advanced. `PatchFeature.execute()` now advances the transient token only after assigning a fresh shape, while the service checks recompute count, object error state, `isValid()`, token advancement, and one-solid shape validity before commit.
+- Carry-forward rule: Never use over-travelled cutter bounds for additive material. Keep freshness bookkeeping transient on the FeaturePython Proxy, and abort/recompute the transaction whenever recompute does not prove a fresh valid shape.
+
+### 2026-07-26 18:54 +08 — PatchCAD FreeCAD bridge RED and sandbox boundary
+
+- Branch/commit: `agent/patchcad-freecad` before Task 11 commit
+- Attempt: Add FreeCAD-independent behavior tests for the strict patch protocol, audit replacement, authenticated HTTP bridge, CORS/PNA, request bounds, GUI dispatch timeout, and request idempotency before creating production modules.
+- Result: worked, with one environment-dependent retry
+- Evidence: The required pure command first exited 1 with three expected `ModuleNotFoundError` errors for absent `protocol`, `audit`, and `bridge` modules. After the minimal implementation, the restricted sandbox rejected ephemeral loopback binds with `PermissionError: [Errno 1] Operation not permitted`; rerunning the same standard-library tests with approved loopback permission exposed one genuine failure (`500 != 413`) in the oversized-body response.
+- Carry-forward rule: Keep the bridge tests on real ephemeral `127.0.0.1` sockets. In this managed environment they require the approved `python3 -m unittest` loopback permission; do not replace them with handler mocks.
+
+### 2026-07-26 18:54 +08 — Pure bridge contract and fail-closed protocol
+
+- Branch/commit: `agent/patchcad-freecad` before Task 11 commit
+- Attempt: Implement strict millimetre-only request parsing, conflict-aware request-ID caching, atomic same-directory audit replacement, bearer-token HTTP routes, exact-origin CORS/PNA, body bounds, timeout mapping, and a queue drained only by a GUI-thread Qt timer.
+- Result: worked
+- Evidence: After mapping the body-limit exception to 413, all 20 initial pure tests passed. A later focused test proved that `through_all=false` was incorrectly accepted (RED: `ProtocolError not raised`); rejecting blind holes until a depth contract exists made that focused test GREEN. The complete pure suite then contains 21 tests.
+- Carry-forward rule: The current FreeCAD MVP supports through holes only. HTTP threads may enqueue and wait, but only the Qt timer callback may call selection or mutation services. Tokens remain random process memory, origins remain exact allowlist entries, and credentials/cookies/wildcards must not be introduced.
+
+### 2026-07-26 18:54 +08 — Reversible FreeCAD adapter and missing runtime
+
+- Branch/commit: `agent/patchcad-freecad` before Task 11 commit
+- Attempt: Add the FreeCAD 1.1 namespaced workbench, selection validation, reversible `Part::FeaturePython`, one-transaction mutation service, exact Part booleans, persisted patch metadata, and post-commit external audit reporting using the documented FreeCAD Python APIs.
+- Result: partial
+- Evidence: Standard Python compilation, XML parsing, and import-isolation checks passed; importing `protocol`, `audit`, and `bridge` loaded none of `FreeCAD`, `FreeCADGui`, or `Part`. `command -v` found no `FreeCADCmd`, `freecadcmd`, `FreeCAD`, or `freecad` executable, matching the earlier planning discovery.
+- Carry-forward rule: Treat add/enlarge cuts and shrink annulus fuse/recut geometry, face-orientation recognition, FeaturePython recompute, GUI registration, and transaction undo as installation-dependent manual verification until run under FreeCAD 1.1. Never report the FreeCAD geometry/GUI smoke tests as run in this environment.
+
+### 2026-07-28 — Native FreeCADCmd document smoke and headless safeguards
+
+- Branch/commit: `agent/patchcad-freecad` before the native-smoke commit
+- Attempt: Verify PatchCAD against an official FreeCAD 1.1.3 macOS arm64
+  application bundle without installing it globally, then exercise a real
+  Part document's create, diameter-update, enable/disable, undo, and redo
+  paths through `FreeCADCmd`.
+- Result: worked for native headless document behavior; GUI smoke remains
+  pending desktop-control permission
+- Evidence: The official release disk image checksum matched before it was
+  mounted read-only in a temporary directory. The first native run exposed a
+  real headless difference: source features have a present-but-`None`
+  `ViewObject`, so the old visibility assignment raised before commit. A
+  nullable view-provider guard made the new pure regression GREEN. FreeCADCmd
+  also starts with `UndoMode == 0`; production mutations now refuse before any
+  transaction when Undo is disabled, while the isolated native fixture enables
+  undo deliberately. `npm run test:freecad` passed 69 tests, and the native
+  runner printed `NATIVE_SMOKE_OK` after exercising real OCCT geometry. Its
+  marker guard also rejects FreeCADCmd's misleading zero exit after a script
+  exception. A macOS GUI-control retry still could not obtain a controllable
+  FreeCAD window, so workbench discovery, selection UI, browser-to-Qt bridge,
+  and audit behavior were not claimed as verified.
+- Carry-forward rule: Keep headless FreeCADCmd support explicit, fail closed
+  when reversible Undo is disabled, and require an unambiguous native success
+  marker. Do not claim GUI verification until the installed workbench can be
+  driven with macOS Accessibility and Screen Recording permission.
+
+### 2026-07-28 — Native smoke review closure
+
+- Branch/commit: agent/patchcad-freecad before the native-smoke commit
+- Attempt: Independently review the native smoke proof after it first passed,
+  then correct every gap before treating its result as evidence.
+- Result: worked
+- Evidence: Review found that the original success marker appeared before
+  document cleanup, its shell guard missed lowercase "Unknown exception while
+  processing file", and its undo assertion could be satisfied without proving
+  create or toggle reversibility. The runner is now a portable Node command
+  with a case-insensitive exception guard and exactly one success marker;
+  native_smoke closes the document before emitting that marker and reports
+  FREECAD_VERSION=1.1.3. Source setup is removed from undo history, then the
+  smoke proves exact undo/redo transitions for create, diameter update, disable,
+  and enable. The runner unit suite passed 2/2, a zero-exit fake command without
+  a marker failed closed, the FreeCAD-independent suite passed 69/69, and the
+  real FreeCADCmd run printed FREECAD_VERSION=1.1.3 and NATIVE_SMOKE_OK.
+- Carry-forward rule: A native smoke result must prove the reversible action it
+  claims, place its success signal after cleanup, and reject a runtime's
+  diagnostic even if that runtime returns zero. Keep GUI workbench, selection,
+  Qt bridge, and audit checks separate until desktop automation is available.
+
+## Web/BYOK workstream
+
+### 2026-07-28 00:09 +08 — Production dependency audit closure
+
+- Branch/commit: `agent/patchcad-freecad` while reconciling the merged web and
+  FreeCAD workstreams
+- Attempt: Audit the production dependency graph before deployment and repair
+  only the vulnerable transitive packages without downgrading Next or accepting
+  incompatible ESLint peer dependencies.
+- Result: worked for the production graph; development-only lint tooling has a
+  documented upstream compatibility residual
+- Evidence: `next@16.2.12` resolved vulnerable `postcss@8.4.31` and
+  `sharp@0.34.5`. The package override now resolves `postcss@8.5.23` and
+  `sharp@0.35.3`; `npm audit --omit=dev --json` reports zero vulnerabilities.
+  The full audit still reports nine high findings only through the development
+  ESLint plugin/minimatch chain. A trial `eslint@10.8.0` produced invalid peer
+  ranges in the pinned Next plugins, so it was reverted rather than forced.
+  The merged gates passed 150 web tests, typecheck, lint, 66 FreeCAD-independent
+  tests, production build, and all five Playwright flows.
+- Carry-forward rule: Keep patched production transitive overrides until a
+  compatible Next/ESLint plugin release absorbs them. Treat the remaining
+  lint-chain advisory as a development-environment risk; do not claim the full
+  dependency graph is audit-clean.
 ### 2026-07-28 00:17 +08 — Production dependency audit closure
 
 - Branch/commit: `agent/production-dependency-overrides`
@@ -222,7 +417,6 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: worked
 - Evidence: The adapter-boundary assertion was RED with the raw `M4 mounting bracket` query, then GREEN with an exact fixed composition that isolates the phrase as data and focuses retrieval on mounting-hole dimensions, bolt pattern, units, datasheets, and mechanical drawings. The focused suite passed 4 tests and type checking exited 0.
 - Carry-forward rule: Compose provider research queries from a fixed domain frame plus the bounded user phrase exactly once; treat user text as isolated search data, never as provider instructions.
-
 ### 2026-07-26 — Honest offline patch parser
 
 - Branch/commit: `agent/patchcad-foundation` Task 4 worktree

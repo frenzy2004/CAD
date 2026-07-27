@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
+  <name>PatchCAD</name>
+  <description>Verified, reversible local hole patches for FreeCAD.</description>
+  <version>0.1.0</version>
+  <date>2026-07-26</date>
+  <maintainer email="noreply@patchcad.local">PatchCAD contributors</maintainer>
+  <license>MIT</license>
+  <icon>Resources/Icons/PatchCAD.svg</icon>
+  <content>
+    <workbench>
+      <classname>PatchCADWorkbench</classname>
+      <subdirectory>freecad/PatchCAD</subdirectory>
+      <freecadmin>1.1.0</freecadmin>
+      <tag>part</tag>
+      <tag>holes</tag>
+      <depend type="internal">part</depend>
+    </workbench>
+  </content>
+</package>

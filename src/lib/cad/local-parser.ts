@@ -44,7 +44,7 @@ export function parseLocalPatch(
     }
 
     return parsedPlan({
-      version: 1,
+      version: 2,
       operation: "resize_hole",
       targetFeatureId: selection.editableFeatureIds[0],
       diameterMm,
@@ -69,10 +69,10 @@ export function parseLocalPatch(
     }
 
     return parsedPlan({
-      version: 1,
+      version: 2,
       operation: "add_hole",
       targetFaceId: "face:top",
-      centerMm: { x: selection.pointMm.x, y: selection.pointMm.y },
+      location: "selection",
       diameterMm,
       rationale: prompt.trim(),
     });

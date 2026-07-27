@@ -38,6 +38,34 @@ This is the shared memory for implementation branches. Add an entry whenever an 
   the dialog under an installed FreeCAD release before calling the GUI path
   fully runtime-verified.
 
+### 2026-07-27 23:58 +08 — Bridge request concurrency and mutation boundaries
+
+- Branch/commit: `agent/patchcad-freecad` after the token-handoff repair
+- Attempt: Reproduce the reported in-process request-cache contention and
+  direct service/transaction edge cases before changing the bridge contract.
+- Result: worked
+- Evidence: The RED concurrency tests showed a blocked `req-1` held the sole
+  request-cache lock while unrelated `req-2` could not begin, and a conflicting
+  same-ID request could not be rejected until the first GUI operation released.
+  The cache now coordinates only same-ID in-flight work with a completion event:
+  independent requests proceed, compatible duplicates replay one result, and
+  conflicting IDs fail immediately. Additional RED tests showed that a
+  `resize_hole` point was accepted and then ignored, direct `NaN`/infinite
+  diameters reached mutation code, and cleanup exceptions hid the primary CAD
+  error. The internal dispatcher also coerced booleans and numeric strings
+  before validation, while a 400-digit integer overflowed before it. The
+  protocol now refuses resize points, numeric boundaries translate conversion
+  overflow to a positive-finite validation failure, dispatcher inputs reach the
+  shared validator unchanged, and rollback/recompute cleanup preserves the
+  original exception. The complete FreeCAD-independent suite passed 66 tests
+  plus Python compilation. The separate malformed internal dispatcher payload
+  is not reachable from the public HTTP path and was left out of this narrow
+  repair.
+- Carry-forward rule: Never hold a global idempotency lock across GUI work;
+  only duplicate request IDs synchronize. Keep point ownership explicit by
+  operation, validate finite dimensions at every public mutation boundary, and
+  preserve the initiating CAD failure when cleanup also fails.
+
 ### 2026-07-27 09:35 +08 — Native FreeCAD 1.1 runtime acquisition
 
 - Branch/commit: `agent/patchcad-freecad` after `12476b7`

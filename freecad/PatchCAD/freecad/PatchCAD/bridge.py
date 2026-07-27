@@ -441,14 +441,15 @@ class _BridgeRequestHandler(BaseHTTPRequestHandler):
         if body["units"] != "mm":
             raise ProtocolError("units must be 'mm'")
         diameter = body["diameter_mm"]
-        if (
-            isinstance(diameter, bool)
-            or not isinstance(diameter, (int, float))
-            or not math.isfinite(float(diameter))
-            or float(diameter) <= 0
-        ):
+        if isinstance(diameter, bool) or not isinstance(diameter, (int, float)):
             raise ProtocolError("diameter_mm must be a positive finite number")
-        return {"patch_id": patch_id, "diameter_mm": float(diameter)}
+        try:
+            diameter = float(diameter)
+        except OverflowError as exc:
+            raise ProtocolError("diameter_mm must be a positive finite number") from exc
+        if not math.isfinite(diameter) or diameter <= 0:
+            raise ProtocolError("diameter_mm must be a positive finite number")
+        return {"patch_id": patch_id, "diameter_mm": diameter}
 
     def _enabled_payload(
         self, patch_id: str, body: Mapping[str, object]

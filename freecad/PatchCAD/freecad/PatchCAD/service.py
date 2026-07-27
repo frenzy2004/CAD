@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import importlib
+import math
 from pathlib import Path
 from typing import Mapping
 import uuid
@@ -133,6 +134,18 @@ def _recompute_fresh(document: object, patch: object, previous_serial: int) -> N
         raise PatchServiceError("patch did not produce one valid solid")
 
 
+def _abort_and_recompute(document: object, transaction_open: bool) -> None:
+    if transaction_open:
+        try:
+            document.abortTransaction()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    try:
+        document.recompute()  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
 class PatchService:
     def dispatch(self, action: str, payload: object) -> object:
         if action == "selection":
@@ -140,7 +153,7 @@ class PatchService:
         if action == "create_patch" and isinstance(payload, PatchRequest):
             return self.create_patch(payload)
         if action == "update_diameter" and isinstance(payload, dict):
-            return self.update_diameter(str(payload["patch_id"]), float(payload["diameter_mm"]))
+            return self.update_diameter(str(payload["patch_id"]), payload["diameter_mm"])
         if action == "set_enabled" and isinstance(payload, dict):
             return self.set_enabled(str(payload["patch_id"]), bool(payload["enabled"]))
         raise PatchServiceError(f"unsupported dispatcher action: {action}")
@@ -188,9 +201,7 @@ class PatchService:
             document.commitTransaction()
             transaction_open = False
         except Exception:
-            if transaction_open:
-                document.abortTransaction()
-            document.recompute()
+            _abort_and_recompute(document, transaction_open)
             raise
 
         response = _patch_response(patch)
@@ -213,8 +224,16 @@ class PatchService:
         return response
 
     def update_diameter(self, patch_id: str, diameter_mm: float) -> dict[str, object]:
-        if diameter_mm <= 0:
-            raise PatchServiceError("diameter_mm must be positive")
+        if isinstance(diameter_mm, bool) or not isinstance(diameter_mm, (int, float)):
+            raise PatchServiceError("diameter_mm must be a positive finite number")
+        try:
+            diameter_mm = float(diameter_mm)
+        except OverflowError as exc:
+            raise PatchServiceError(
+                "diameter_mm must be a positive finite number"
+            ) from exc
+        if not math.isfinite(diameter_mm) or diameter_mm <= 0:
+            raise PatchServiceError("diameter_mm must be a positive finite number")
         patch = self._active_patch(patch_id)
         return self._mutate_patch(
             patch,
@@ -259,9 +278,7 @@ class PatchService:
             document.commitTransaction()
             transaction_open = False
         except Exception:
-            if transaction_open:
-                document.abortTransaction()
-            document.recompute()
+            _abort_and_recompute(document, transaction_open)
             raise
 
         entry = {

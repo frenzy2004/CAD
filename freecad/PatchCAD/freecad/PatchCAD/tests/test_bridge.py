@@ -244,6 +244,19 @@ class RunningBridgeTests(unittest.TestCase):
         self.assertEqual(response_body["error"]["code"], "BODY_READ_TIMEOUT")
         self.assertEqual(self.dispatcher.calls, [])
 
+    def test_rejects_an_overflow_diameter_without_dispatching(self):
+        self.app.max_body_bytes = 1024
+        status, _, body = self.request(
+            "PATCH",
+            "/patches/patch-7/diameter",
+            body={"diameter_mm": 10**400, "units": "mm"},
+            headers=self.auth_headers(Origin=self.origin),
+        )
+
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"]["code"], "INVALID_REQUEST")
+        self.assertEqual(self.dispatcher.calls, [])
+
     def test_dispatch_timeout_returns_gateway_timeout(self):
         self.dispatcher.error = TimeoutError("GUI did not respond")
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import math
@@ -115,7 +115,11 @@ def _identifier(value: object, field: str, *, optional: bool = False) -> str | N
 def _finite_number(value: object, field: str, *, positive: bool = False) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ProtocolError(f"{field} must be a number")
-    result = float(value)
+    try:
+        result = float(value)
+    except OverflowError as exc:
+        qualifier = "positive finite" if positive else "finite"
+        raise ProtocolError(f"{field} must be a {qualifier} number") from exc
     if not math.isfinite(result) or (positive and result <= 0):
         qualifier = "positive finite" if positive else "finite"
         raise ProtocolError(f"{field} must be a {qualifier} number")
@@ -146,6 +150,8 @@ def parse_patch_request(value: bytes | str | Mapping[str, object]) -> PatchReque
         point = tuple(_finite_number(item, "point") for item in point_value)
     if operation == "add_hole" and point is None:
         raise ProtocolError("point is required for add_hole")
+    if operation == "resize_hole" and point is not None:
+        raise ProtocolError("point is only supported for add_hole")
 
     through_all = body.get("through_all", True)
     if not isinstance(through_all, bool):
@@ -165,12 +171,21 @@ def parse_patch_request(value: bytes | str | Mapping[str, object]) -> PatchReque
     )
 
 
+@dataclass
+class _InFlightRequest:
+    fingerprint: str | None
+    completed: threading.Event = field(default_factory=threading.Event)
+    result: object = None
+    error: BaseException | None = None
+
+
 class RequestIdCache:
     """Process-local request-result cache with payload-conflict detection."""
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._entries: dict[str, tuple[str | None, object]] = {}
+        self._inflight: dict[str, _InFlightRequest] = {}
 
     def run(
         self,
@@ -193,6 +208,42 @@ class RequestIdCache:
                     )
                 return result  # type: ignore[return-value]
 
+            in_flight = self._inflight.get(request_id)
+            if in_flight is not None:
+                if (
+                    fingerprint is not None
+                    and in_flight.fingerprint is not None
+                    and fingerprint != in_flight.fingerprint
+                ):
+                    raise IdempotencyConflict(
+                        "request_id was already used with a different payload"
+                    )
+                primary = False
+            else:
+                in_flight = _InFlightRequest(fingerprint=fingerprint)
+                self._inflight[request_id] = in_flight
+                primary = True
+
+        if not primary:
+            in_flight.completed.wait()
+            if in_flight.error is not None:
+                raise in_flight.error
+            return in_flight.result  # type: ignore[return-value]
+
+        try:
             result = operation()
+        except BaseException as error:
+            with self._lock:
+                in_flight.error = error
+                if self._inflight.get(request_id) is in_flight:
+                    del self._inflight[request_id]
+                in_flight.completed.set()
+            raise
+
+        with self._lock:
             self._entries[request_id] = (fingerprint, result)
-            return result
+            in_flight.result = result
+            if self._inflight.get(request_id) is in_flight:
+                del self._inflight[request_id]
+            in_flight.completed.set()
+        return result

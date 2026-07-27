@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 from pathlib import Path
 import tempfile
 import unittest
@@ -66,6 +67,51 @@ class TransactionDocument:
 
 
 class MutationRecomputeTests(unittest.TestCase):
+    def test_dispatch_rejects_invalid_diameters_before_patch_lookup(self):
+        patch_service = PatchService()
+        with mock.patch.object(patch_service, "_active_patch") as active_patch:
+            for diameter in (True, "12.0", 10**400):
+                with self.subTest(diameter=diameter):
+                    with self.assertRaisesRegex(PatchServiceError, "positive finite"):
+                        patch_service.dispatch(
+                            "update_diameter",
+                            {"patch_id": "patch-1", "diameter_mm": diameter},
+                        )
+
+        active_patch.assert_not_called()
+
+    def test_update_diameter_rejects_non_finite_values_before_patch_lookup(self):
+        patch_service = PatchService()
+        with mock.patch.object(patch_service, "_active_patch") as active_patch:
+            for diameter in (math.nan, math.inf, -math.inf, 10**400, True):
+                with self.subTest(diameter=diameter):
+                    with self.assertRaisesRegex(PatchServiceError, "positive finite"):
+                        patch_service.update_diameter("patch-1", diameter)
+
+        active_patch.assert_not_called()
+
+    def test_mutation_preserves_the_original_error_when_cleanup_fails(self):
+        patch = PatchObject()
+        patch.Document.recompute_behavior = lambda: (_ for _ in ()).throw(
+            RuntimeError("cleanup recompute failure")
+        )
+
+        def primary_failure():
+            raise PatchServiceError("primary mutation failure")
+
+        with mock.patch.object(
+            patch.Document,
+            "abortTransaction",
+            side_effect=RuntimeError("cleanup abort failure"),
+        ):
+            with self.assertRaisesRegex(PatchServiceError, "primary mutation failure"):
+                PatchService()._mutate_patch(
+                    patch,
+                    "Update PatchCAD diameter",
+                    primary_failure,
+                    {"operation": "update_diameter", "diameter_mm": 12.0},
+                )
+
     def test_update_aborts_when_execute_leaves_a_stale_valid_shape(self):
         patch = PatchObject()
         patch.Document.recompute_behavior = lambda: 1

@@ -30,11 +30,26 @@ def _quantity_value(value: object) -> float:
     return float(getattr(value, "Value", value))
 
 
+def _find_patches(document: object, property_name: str, value: str) -> list[object]:
+    return [
+        obj
+        for obj in document.Objects  # type: ignore[attr-defined]
+        if getattr(obj, property_name, None) == value and hasattr(obj, "PatchId")
+    ]
+
+
 def _find_patch(document: object, property_name: str, value: str):
-    for obj in document.Objects:  # type: ignore[attr-defined]
-        if getattr(obj, property_name, None) == value and hasattr(obj, "PatchId"):
-            return obj
-    return None
+    matches = _find_patches(document, property_name, value)
+    return matches[0] if matches else None
+
+
+def _find_request_patch(document: object, request_id: str):
+    matches = _find_patches(document, "RequestId", request_id)
+    if len(matches) > 1:
+        raise IdempotencyConflict(
+            "request_id already exists in multiple persisted patches"
+        )
+    return matches[0] if matches else None
 
 
 def _open_documents(app: object) -> list[object]:
@@ -60,11 +75,11 @@ def _find_global_request_patch(app: object, request_id: str):
     matches = [
         patch
         for document in _open_documents(app)
-        if (patch := _find_patch(document, "RequestId", request_id)) is not None
+        for patch in _find_patches(document, "RequestId", request_id)
     ]
     if len(matches) > 1:
         raise IdempotencyConflict(
-            "request_id already exists in multiple open documents"
+            "request_id already exists in multiple persisted patches"
         )
     return matches[0] if matches else None
 
@@ -137,15 +152,15 @@ class PatchService:
         request_fingerprint = patch_request_fingerprint(request)
         existing = _find_global_request_patch(app, request.request_id)
         if existing is None and target is not None:
-            existing = _find_patch(
-                target.source.Document, "RequestId", request.request_id
+            existing = _find_request_patch(
+                target.source.Document, request.request_id
             )
         if existing is not None:
             return _persisted_replay(existing, request_fingerprint)
 
         target = target or resolve_request(request)
         document = target.source.Document
-        existing = _find_patch(document, "RequestId", request.request_id)
+        existing = _find_request_patch(document, request.request_id)
         if existing is not None:
             return _persisted_replay(existing, request_fingerprint)
 

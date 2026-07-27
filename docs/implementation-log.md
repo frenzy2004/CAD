@@ -17,6 +17,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## FreeCAD workstream
 
+### 2026-07-27 09:20 +08 — Post-review through-hole and persisted-replay closure
+
+- Branch/commit: `agent/patchcad-freecad` after `363748b`, before the follow-up commit
+- Attempt: Reproduce two independent-review boundary defects before changing production code: a near-full-width stepped pilot below a selected 5 mm cylindrical wall, and two persisted `RequestId` objects in one document.
+- Result: worked
+- Evidence: Both new behavior tests were RED first: the 4.9 mm pilot raised no `SelectionError`, and same-document duplicate IDs silently replayed the first patch. The through-hole proof now samples just inside the selected wall using a tolerance-scaled radial margin in addition to center and mid-radius samples; all seven selection tests are GREEN. Request-id discovery now gathers every persisted PatchCAD object before replay and fails closed when any scope has more than one; all five persisted-idempotency tests are GREEN. The 34 pure Python FreeCAD-independent tests and compile step passed. A full 53-test discovery run had 15 managed-sandbox `127.0.0.1` bind errors before the real HTTP tests could execute; those failures are environmental, not assertions from the bridge.
+- Carry-forward rule: Treat a near-wall radial void check as required topology evidence for through-hole resize, but do not claim it replaces real FreeCAD/OCCT topology smoke coverage. Never choose an arbitrary first match for persisted request replay; ambiguous duplicates in one or several open documents must fail closed.
+
 ### 2026-07-27 08:56 +08 — Main reconciliation and bounded merged-tree verification
 
 - Branch/commit: `agent/patchcad-freecad` after merging `origin/main`

@@ -158,21 +158,30 @@ def _validate_through_openings(
         axis[2] * radial_unit[0] - axis[0] * radial_unit[2],
         axis[0] * radial_unit[1] - axis[1] * radial_unit[0],
     )
-    opening_directions = (
-        (0.0, 0.0, 0.0),
+    radial_directions = (
         radial_unit,
         tuple(-value for value in radial_unit),
         tangent_unit,
         tuple(-value for value in tangent_unit),
     )
     probe_offset = max(1e-5, min(radius, axial_span) * 1e-6)
+    near_wall_margin = min(
+        radius * 0.1,
+        max(boundary_tolerance, radius * 1e-6),
+    )
+    near_wall_radius = radius - near_wall_margin
+    opening_samples = (
+        ((0.0, 0.0, 0.0), 0.0),
+        *((direction, radius * 0.75) for direction in radial_directions),
+        *((direction, near_wall_radius) for direction in radial_directions),
+    )
     try:
         for endpoint, outward in ((lower, -1.0), (upper, 1.0)):
-            for direction in opening_directions:
+            for direction, radial_distance in opening_samples:
                 coordinates = tuple(
                     center[index]
                     + axis[index] * (endpoint + outward * probe_offset)
-                    + direction[index] * radius * 0.75
+                    + direction[index] * radial_distance
                     for index in range(3)
                 )
                 probe = vector_factory(*coordinates)

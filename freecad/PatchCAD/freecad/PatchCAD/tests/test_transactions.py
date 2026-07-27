@@ -351,7 +351,32 @@ class PersistedIdempotencyTests(unittest.TestCase):
         )
 
         with mock.patch.object(service, "_app", return_value=app):
-            with self.assertRaisesRegex(ProtocolError, "multiple open documents"):
+            with self.assertRaisesRegex(ProtocolError, "multiple persisted patches"):
+                PatchService().create_patch(request)
+
+    def test_duplicate_persisted_request_id_within_one_document_is_ambiguous(self):
+        request = PatchRequest(
+            request_id="request-duplicate-in-document",
+            document=None,
+            object_name="Body",
+            subelement="Face4",
+            operation="resize_hole",
+            diameter_mm=6.0,
+        )
+        first = PatchObject()
+        second = PatchObject()
+        second.Document = first.Document
+        first.Document.Objects = [first, second]
+        for patch in (first, second):
+            patch.RequestId = request.request_id
+            patch.RequestFingerprint = self.fingerprint(request)
+        app = SimpleNamespace(
+            ActiveDocument=first.Document,
+            listDocuments=lambda: {"Bracket": first.Document},
+        )
+
+        with mock.patch.object(service, "_app", return_value=app):
+            with self.assertRaisesRegex(ProtocolError, "multiple persisted patches"):
                 PatchService().create_patch(request)
 
 

@@ -137,7 +137,7 @@ class CylinderSelectionBoundaryTests(unittest.TestCase):
             pass
 
         self.assertEqual(result, ((0.0, 0.0, 1.0), 10.0))
-        self.assertEqual(len(source_shape.probes), 10)
+        self.assertGreaterEqual(len(source_shape.probes), 10)
         self.assertLess(source_shape.probes[0][0].z, 0)
         self.assertTrue(any(probe[0].z > 10 for probe in source_shape.probes))
         self.assertTrue(any(abs(probe[0].x) > 3 for probe in source_shape.probes))
@@ -153,6 +153,14 @@ class CylinderSelectionBoundaryTests(unittest.TestCase):
 
     def test_rejects_internal_shoulder_with_smaller_axial_pilot_opening(self):
         source_shape = SourceShape(solid_below_radius=2.0)
+
+        with self.assertRaisesRegex(SelectionError, "through-hole"):
+            _validate_inward_full_cylinder(
+                CylinderFace(), source_shape, Vector
+            )
+
+    def test_rejects_near_full_width_internal_shoulder(self):
+        source_shape = SourceShape(solid_below_radius=4.9)
 
         with self.assertRaisesRegex(SelectionError, "through-hole"):
             _validate_inward_full_cylinder(

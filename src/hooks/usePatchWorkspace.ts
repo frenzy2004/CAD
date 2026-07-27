@@ -31,6 +31,14 @@ import {
   downloadArtifact,
   hashBracketSnapshot,
 } from "@/lib/download";
+import {
+  EXA_PROVIDER_KEY_HEADER,
+  EXA_PROVIDER_KEY_STORAGE_KEY,
+  OPENAI_PROVIDER_KEY_HEADER,
+  OPENAI_PROVIDER_KEY_STORAGE_KEY,
+  PROVIDER_KEY_REQUIRED_CODE,
+  PROVIDER_THROTTLED_CODE,
+} from "@/lib/provider-keys";
 
 export type WorkspacePhase =
   | "booting"
@@ -58,6 +66,21 @@ type ResearchState = {
   status: "idle" | "loading" | "ready" | "unavailable" | "error";
   sources: ResearchSource[];
 };
+
+function readSessionProviderKey(
+  storageKey: string,
+  reactSnapshot: string,
+): string {
+  const normalizedSnapshot = reactSnapshot.trim();
+  if (typeof window === "undefined") return normalizedSnapshot;
+  const currentSessionKey =
+    window.sessionStorage.getItem(storageKey)?.trim() ?? "";
+  // Keep the React snapshot as the declared interface while letting a
+  // synchronous clear/replacement in this session win at request dispatch.
+  return currentSessionKey === normalizedSnapshot
+    ? normalizedSnapshot
+    : currentSessionKey;
+}
 
 type WorkspaceState = {
   phase: WorkspacePhase;
@@ -355,6 +378,7 @@ function workspaceReducer(
 
 export function usePatchWorkspace(
   providedInitialSnapshot: BracketSnapshot,
+  providerKeys: { openai: string; exa: string },
 ): PatchWorkspaceController {
   const initialSnapshot = useMemo(
     () => BracketSnapshotSchema.parse(providedInitialSnapshot),
@@ -439,11 +463,20 @@ export function usePatchWorkspace(
 
   const loadResearch = useCallback(async (query: string) => {
     const token = ++researchToken.current;
+    const exaKey = readSessionProviderKey(
+      EXA_PROVIDER_KEY_STORAGE_KEY,
+      providerKeys.exa,
+    );
     dispatch({ type: "RESEARCH_LOADING" });
     try {
       const response = await fetch("/api/research", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...(exaKey
+            ? { [EXA_PROVIDER_KEY_HEADER]: exaKey }
+            : {}),
+        },
         body: JSON.stringify({ query }),
       });
       if (token !== researchToken.current) return;
@@ -452,7 +485,9 @@ export function usePatchWorkspace(
         if (token !== researchToken.current) return;
         dispatch({
           type:
-            code === "RESEARCH_NOT_CONFIGURED"
+            code === "RESEARCH_NOT_CONFIGURED" ||
+            code === PROVIDER_KEY_REQUIRED_CODE ||
+            code === PROVIDER_THROTTLED_CODE
               ? "RESEARCH_UNAVAILABLE"
               : "RESEARCH_FAILED",
         });
@@ -472,7 +507,7 @@ export function usePatchWorkspace(
         dispatch({ type: "RESEARCH_FAILED" });
       }
     }
-  }, []);
+  }, [providerKeys.exa]);
 
   const previewPlan = useCallback(
     async (
@@ -496,14 +531,14 @@ export function usePatchWorkspace(
       const { after, report } = applyPatch({
         before: state.currentSnapshot,
         selection,
-        plan,
+        plan: validation.plan,
       });
       const mesh = await buildExactMesh(after);
       if (token !== operationToken.current) return;
 
       dispatch({
         type: "PREVIEW_SUCCEEDED",
-        plan,
+        plan: validation.plan,
         planSource: source,
         candidateSnapshot: after,
         previewMesh: mesh,
@@ -531,11 +566,20 @@ export function usePatchWorkspace(
     }
 
     const token = ++operationToken.current;
+    const openaiKey = readSessionProviderKey(
+      OPENAI_PROVIDER_KEY_STORAGE_KEY,
+      providerKeys.openai,
+    );
     dispatch({ type: "PLANNING_STARTED" });
     try {
       const response = await fetch("/api/plan", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...(openaiKey
+            ? { [OPENAI_PROVIDER_KEY_HEADER]: openaiKey }
+            : {}),
+        },
         body: JSON.stringify({
           prompt: instruction,
           snapshot: state.currentSnapshot,
@@ -551,7 +595,11 @@ export function usePatchWorkspace(
         source = parsed.source;
       } else {
         const code = await readPublicErrorCode(response);
-        if (code !== "AI_NOT_CONFIGURED") {
+        if (
+          code !== "AI_NOT_CONFIGURED" &&
+          code !== PROVIDER_KEY_REQUIRED_CODE &&
+          code !== PROVIDER_THROTTLED_CODE
+        ) {
           throw new Error(`Planning unavailable: ${code ?? "UNKNOWN_ERROR"}.`);
         }
         const local = parseLocalPatch(instruction, state.selection);
@@ -581,6 +629,7 @@ export function usePatchWorkspace(
   }, [
     loadResearch,
     previewPlan,
+    providerKeys.openai,
     state.currentSnapshot,
     state.instruction,
     state.selection,

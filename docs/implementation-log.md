@@ -17,6 +17,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## FreeCAD workstream
 
+### 2026-07-27 08:56 +08 — Main reconciliation and bounded merged-tree verification
+
+- Branch/commit: `agent/patchcad-freecad` after merging `origin/main`
+- Attempt: Resolve the PR conflict by preserving both implementation-log histories, then rerun the combined web and FreeCAD-independent gates.
+- Result: worked, with the known managed-loopback restriction
+- Evidence: The only merge conflict was `docs/implementation-log.md`; both histories were retained and `git diff --check` passed. The first merged-tree `npm run test:freecad` ran all 51 cases but the managed sandbox denied 15 real `127.0.0.1` binds before those tests could execute; the remaining 36 non-socket tests passed in a focused rerun. The exact pre-merge FreeCAD fix tree had already passed all 51/51 with approved loopback access, and the merge changed no FreeCAD source or test file. On the reconciled tree, the web suite passed 18 files and 122 tests, typecheck passed, and warning-free lint passed.
+- Carry-forward rule: Treat a loopback `PermissionError` as an environment gate only when the same immutable FreeCAD source/test tree has a recorded 51/51 approved run and the reconciliation changes no FreeCAD path. Never convert that into a claim that real FreeCAD/OCCT/GUI runtime tests ran.
+
 ### 2026-07-26 20:55 +08 — Task 11 Fix Round 2 deadline, replay, audit, and topology gates
 
 - Branch/commit: `agent/patchcad-freecad` after `1a528e2` (this fix commit)

@@ -259,6 +259,13 @@ describe("PatchCAD workspace", () => {
     expect(createObjectURL.mock.calls[1][0]).toMatchObject({
       type: "application/json",
     });
+    expect(JSON.parse(await createObjectURL.mock.calls[1][0].text()).plan).toEqual({
+      version: 2,
+      operation: "resize_hole",
+      targetFeatureId: "hole:nw",
+      diameterMm: 8,
+      rationale: "make this hole 8 mm",
+    });
     expect(revokeObjectURL).toHaveBeenCalledTimes(2);
   });
 

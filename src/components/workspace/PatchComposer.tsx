@@ -4,14 +4,21 @@ import { PatchPreview } from "@/components/cad/PatchPreview";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import type { PatchWorkspaceController } from "@/hooks/usePatchWorkspace";
+import type { ProviderKeyName } from "@/lib/provider-keys";
 
 import { ResearchPanel } from "./ResearchPanel";
 
 export interface PatchComposerProps {
+  providerKeys: { openai: string; exa: string };
+  onProviderKeyChange(provider: ProviderKeyName, value: string): void;
   workspace: PatchWorkspaceController;
 }
 
-export function PatchComposer({ workspace }: PatchComposerProps) {
+export function PatchComposer({
+  providerKeys,
+  onProviderKeyChange,
+  workspace,
+}: PatchComposerProps) {
   const selectedId =
     workspace.selection?.editableFeatureIds[0] ??
     workspace.selection?.editableFaceIds[0] ??
@@ -57,6 +64,56 @@ export function PatchComposer({ workspace }: PatchComposerProps) {
       </div>
 
       <div className="space-y-4 px-4 py-4">
+        <section aria-labelledby="provider-keys-heading">
+          <h3
+            className="m-0 text-xs font-semibold text-stone-300"
+            id="provider-keys-heading"
+          >
+            Your API keys (session only)
+          </h3>
+          <p className="mt-1 mb-3 text-xs leading-5 text-stone-500">
+            Keys are not saved and transit the server only for the request.
+          </p>
+          <div className="grid gap-3">
+            <div>
+              <label
+                className="block text-xs font-medium text-stone-400"
+                htmlFor="openai-provider-key"
+              >
+                OpenAI API key
+              </label>
+              <input
+                autoComplete="off"
+                className="mt-1 min-h-11 w-full rounded-md border border-stone-700 bg-stone-950 px-3 text-sm text-stone-100 outline-none placeholder:text-stone-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/25"
+                id="openai-provider-key"
+                onChange={(event) =>
+                  onProviderKeyChange("openai", event.currentTarget.value)
+                }
+                type="password"
+                value={providerKeys.openai}
+              />
+            </div>
+            <div>
+              <label
+                className="block text-xs font-medium text-stone-400"
+                htmlFor="exa-provider-key"
+              >
+                Exa API key
+              </label>
+              <input
+                autoComplete="off"
+                className="mt-1 min-h-11 w-full rounded-md border border-stone-700 bg-stone-950 px-3 text-sm text-stone-100 outline-none placeholder:text-stone-600 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/25"
+                id="exa-provider-key"
+                onChange={(event) =>
+                  onProviderKeyChange("exa", event.currentTarget.value)
+                }
+                type="password"
+                value={providerKeys.exa}
+              />
+            </div>
+          </div>
+        </section>
+
         <div className="grid grid-cols-[1fr_auto] items-end gap-4 rounded-md border border-stone-800 bg-stone-950/70 p-3">
           <div className="min-w-0">
             <p className="m-0 text-xs text-stone-500">Selected feature</p>

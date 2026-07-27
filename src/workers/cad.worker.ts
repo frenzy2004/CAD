@@ -8,6 +8,7 @@ import {
   iterTopo,
   makeBox,
   makeCylinder,
+  makeVertex,
   setOC,
   Solid,
   type AnyShape,
@@ -197,13 +198,19 @@ function buildBracket(snapshot: BracketSnapshot): Solid {
         cutter.delete();
       }
     }
-
-    validateSolid(result, "INVALID_BRACKET_RESULT");
-    return result;
   } catch (error) {
     result.delete();
     throw error;
   }
+
+  return ownSingleSolid(result, {
+    invalidCode: "INVALID_BRACKET_RESULT",
+    countCode: "INVALID_BRACKET_RESULT",
+    countMessage: (count) =>
+      `The exact bracket result must contain one solid; found ${count}.`,
+    typeMessage:
+      "The exact bracket result did not resolve to one solid.",
+  });
 }
 
 function importedModelSummary(
@@ -220,19 +227,29 @@ function importedModelSummary(
   };
 }
 
-function ownSingleImportedSolid(imported: AnyShape): Solid {
-  if (imported instanceof Solid) {
-    return retainValidatedResource(imported, () => {
-      validateSolid(imported, "INVALID_STEP_SOLID");
+type SingleSolidOptions = {
+  invalidCode: string;
+  countCode: string;
+  countMessage(count: number): string;
+  typeMessage: string;
+};
+
+function ownSingleSolid(
+  shape: AnyShape,
+  options: SingleSolidOptions,
+): Solid {
+  if (shape instanceof Solid) {
+    return retainValidatedResource(shape, () => {
+      validateSolid(shape, options.invalidCode);
     });
   }
 
-  const rawSolids = [...iterTopo(imported.wrapped, "solid")];
+  const rawSolids = [...iterTopo(shape.wrapped, "solid")];
   try {
     if (rawSolids.length !== 1) {
       throw new CadKernelError(
-        "STEP_SOLID_COUNT",
-        `STEP import requires exactly one solid; found ${rawSolids.length}.`,
+        options.countCode,
+        options.countMessage(rawSolids.length),
       );
     }
 
@@ -240,21 +257,31 @@ function ownSingleImportedSolid(imported: AnyShape): Solid {
     try {
       if (!(selected instanceof Solid)) {
         throw new CadKernelError(
-          "STEP_SOLID_COUNT",
-          "STEP import did not resolve to one solid.",
+          options.countCode,
+          options.typeMessage,
         );
       }
       const owned = selected.clone();
       return retainValidatedResource(owned, () => {
-        validateSolid(owned, "INVALID_STEP_SOLID");
+        validateSolid(owned, options.invalidCode);
       });
     } finally {
       selected.delete();
     }
   } finally {
     rawSolids.forEach((solid) => solid.delete());
-    imported.delete();
+    shape.delete();
   }
+}
+
+function ownSingleImportedSolid(imported: AnyShape): Solid {
+  return ownSingleSolid(imported, {
+    invalidCode: "INVALID_STEP_SOLID",
+    countCode: "STEP_SOLID_COUNT",
+    countMessage: (count) =>
+      `STEP import requires exactly one solid; found ${count}.`,
+    typeMessage: "STEP import did not resolve to one solid.",
+  });
 }
 
 function diagonalLength(shape: Shape3D): number {
@@ -312,13 +339,19 @@ function rebuildImportedResult(holes: SessionHole[]): Solid {
         cutter.delete();
       }
     }
-
-    validateSolid(result, "INVALID_SESSION_HOLE_RESULT");
-    return result;
   } catch (error) {
     result.delete();
     throw error;
   }
+
+  return ownSingleSolid(result, {
+    invalidCode: "INVALID_SESSION_HOLE_RESULT",
+    countCode: "INVALID_SESSION_HOLE_RESULT",
+    countMessage: (count) =>
+      `The exact session-hole result must contain one solid; found ${count}.`,
+    typeMessage:
+      "The exact session-hole result did not resolve to one solid.",
+  });
 }
 
 function normalForPlanarFace(
@@ -340,6 +373,34 @@ function normalForPlanarFace(
         "NON_PLANAR_FACE",
         "Session holes can only be added to planar faces; existing imported holes cannot be resized.",
       );
+    }
+
+    const openCascade = getOC();
+    const point = makeVertex([
+      pointMm.x,
+      pointMm.y,
+      pointMm.z,
+    ]);
+    const distance = new openCascade.BRepExtrema_DistShapeShape_1();
+    const progress = new openCascade.Message_ProgressRange_1();
+    try {
+      distance.LoadS1(point.wrapped);
+      distance.LoadS2(face.wrapped);
+      if (
+        !distance.Perform(progress) ||
+        !distance.IsDone() ||
+        !Number.isFinite(distance.Value()) ||
+        distance.Value() > 1e-5
+      ) {
+        throw new CadKernelError(
+          "POINT_NOT_ON_FACE",
+          "The requested point does not lie on the selected planar face.",
+        );
+      }
+    } finally {
+      progress.delete();
+      distance.delete();
+      point.delete();
     }
 
     const normal = face.normalAt([pointMm.x, pointMm.y, pointMm.z]);

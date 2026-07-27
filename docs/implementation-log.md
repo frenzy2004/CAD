@@ -137,6 +137,87 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: partial
 - Evidence: Standard Python compilation, XML parsing, and import-isolation checks passed; importing `protocol`, `audit`, and `bridge` loaded none of `FreeCAD`, `FreeCADGui`, or `Part`. `command -v` found no `FreeCADCmd`, `freecadcmd`, `FreeCAD`, or `freecad` executable, matching the earlier planning discovery.
 - Carry-forward rule: Treat add/enlarge cuts and shrink annulus fuse/recut geometry, face-orientation recognition, FeaturePython recompute, GUI registration, and transaction undo as installation-dependent manual verification until run under FreeCAD 1.1. Never report the FreeCAD geometry/GUI smoke tests as run in this environment.
+## Web/BYOK workstream
+
+### 2026-07-28 00:09 +08 — Production dependency audit closure
+
+- Branch/commit: `agent/patchcad-freecad` while reconciling the merged web and
+  FreeCAD workstreams
+- Attempt: Audit the production dependency graph before deployment and repair
+  only the vulnerable transitive packages without downgrading Next or accepting
+  incompatible ESLint peer dependencies.
+- Result: worked for the production graph; development-only lint tooling has a
+  documented upstream compatibility residual
+- Evidence: `next@16.2.12` resolved vulnerable `postcss@8.4.31` and
+  `sharp@0.34.5`. The package override now resolves `postcss@8.5.23` and
+  `sharp@0.35.3`; `npm audit --omit=dev --json` reports zero vulnerabilities.
+  The full audit still reports nine high findings only through the development
+  ESLint plugin/minimatch chain. A trial `eslint@10.8.0` produced invalid peer
+  ranges in the pinned Next plugins, so it was reverted rather than forced.
+  The merged gates passed 150 web tests, typecheck, lint, 66 FreeCAD-independent
+  tests, production build, and all five Playwright flows.
+- Carry-forward rule: Keep patched production transitive overrides until a
+  compatible Next/ESLint plugin release absorbs them. Treat the remaining
+  lint-chain advisory as a development-environment risk; do not claim the full
+  dependency graph is audit-clean.
+
+### 2026-07-27 23:33 — Clean-worktree CAD startup and selection-safety reconciliation
+
+- Branch/commit: `agent/byok-provider-hardening` before the reconciliation commit
+- Attempt: Validate the BYOK branch in an isolated checkout, reconcile it with
+  the verified recovery baseline, and rerun the exact browser workflow before
+  publishing it.
+- Result: worked
+- Evidence: The branch's manual `cad-worker` webpack entry failed to start a
+  clean Next development server with `Entry cad-worker depends on main, but
+  this entry was not found`; removing the redundant entry restored worker
+  startup. The restored worker now owns and validates every boolean result as
+  one solid and uses OpenCascade distance evaluation to reject an add-hole
+  point that is not on the selected planar face. The deterministic Playwright
+  configuration isolates its local server and can target an explicit external
+  preview. During the full browser run, boolean `shadows` produced a
+  deprecated Three.js `PCFSoftShadowMap` console error; the existing exact
+  offline STEP smoke test failed, then passed after selecting the supported
+  `basic` shadow map. Final verification passed 21 Vitest files / 150 tests,
+  typecheck, lint, a production build, and all 5 Playwright flows, including
+  imported STEP round-trip, face-local edits, mobile layout, and BYOK health.
+- Carry-forward rule: Do not manually inject a Next worker entry when module
+  worker loading already supplies it. Keep exact point-on-face validation and
+  single-solid ownership at the worker boundary; a face ID alone never
+  authorizes an arbitrary edit location. Keep browser tests on their isolated
+  port and use `PLAYWRIGHT_BASE_URL` for a protected preview once authenticated.
+
+### 2026-07-27 13:52 — Public BYOK provider boundary and recovery hardening
+
+- Branch/commit: `recovery/selection-owned-add-hole` through `cc4a940`
+- Attempt: Replace a shared paid-provider access-code design with independent
+  OpenAI/Exa browser-session keys, request-scoped server clients, deterministic
+  offline fallbacks, exact key isolation tests, and a final security review.
+- Result: worked with one explicit deployment-layer residual
+- Evidence: Routes reject missing/blank/overlong keys before body consumption
+  or provider construction; provider keys are session-only in the browser,
+  never enter CAD workers/audits/URLs/prompt bodies, and are read again at
+  request dispatch so a pending preview observes a clear or replacement. The
+  final hardening adds a shared process-local provider limiter, 429-before-
+  construction coverage, 12-second/no-retry/1,200-token OpenAI bounds, and
+  15-second route deadlines. The full final gate passed 21 Vitest files / 150
+  tests, typecheck, lint, and production build. One earlier Magic Circle test
+  timeout was unreproduced: its focused test, serial suite, and repeated full
+  suite reruns all passed before final verification.
+- Carry-forward rule: Never ship owner provider keys or an owner-paid shared
+  code. Keep only session-owned BYOK keys; retain deterministic local planning
+  when providers are absent/throttled. The checked-in limiter is per process /
+  instance only: a public multi-instance deployment must also configure a
+  distributed edge/WAF rate limit before claiming aggregate abuse protection.
+
+### 2026-07-26 21:08 — Bind add-hole plans to the picked point
+
+- Branch/commit: `agent/patchcad-point-binding` before the point-binding commit
+- Attempt: Trace provider and offline add-hole plans from selection through validation, API response, preview, and deterministic apply; then require the picked point, reject provider centers outside a named 0.0001 mm Euclidean tolerance, and canonicalize accepted plans to the exact picked coordinates.
+- Result: worked with one pre-existing test-runner failure carried forward
+- Evidence: The isolated baseline ran 122 unit/integration tests successfully before `npm test` incorrectly collected `tests/e2e/patch-workflow.spec.ts` as Vitest and exited 1. The point-binding RED run then failed exactly 7 new assertions: missing points and displaced centers were accepted, near-point coordinates were retained, and the safe local-parser flow exposed no canonical validated plan. After the minimal fix, the focused run passed 47 tests across the patch engine, local parser, and plan API. A fresh unit/integration run with the known E2E path excluded passed all 129 tests; `npm run typecheck` and `npm run lint` exited 0; Playwright successfully listed all 5 browser tests. A fresh unfiltered `npm test` again passed all 129 collected unit/integration tests but exited 1 only on the same known Playwright-discovery error.
+- Carry-forward rule: A face ID never authorizes an arbitrary add-hole location. Require `selection.pointMm`, accept at most 0.0001 mm of numeric-formatting drift, validate geometry at the canonical selected point, and propagate that canonical plan through provider responses, previews, and apply. Keep resize semantics unchanged.
+
 ### 2026-07-26 20:09 — Workspace independent-review hardening
 
 - Branch/commit: `agent/patchcad-workspace` PR review fix
@@ -457,3 +538,11 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: worked with real-browser visual verification carried forward
 - Evidence: The projection suite was RED on the missing module, then GREEN with six pure tests for in-circle nearest selection, rejection, deterministic ties, client-to-canvas coordinates, and the 8 px minimum radius. Review regressions were RED for lost pointer capture and stale state after mesh replacement, then GREEN after deliberate-release tracking and mesh-revision invalidation. The final suite passed 74 tests across 10 files; typecheck, lint, the production build, and whitespace checks exited 0.
 - Carry-forward rule: Keep semantic selection independent of Three.js scene traversal; publish CSS-pixel anchors only when their projection changes; remount drawing state and invalidate external selections whenever the mesh generation changes. Task 12 must visually exercise fit-to-view, orbit/draw handoff, persistent SVG selection, Escape/capture-loss cancellation, and selected-hole highlighting in a real browser.
+
+### 2026-07-26 — Real-browser exact CAD verification
+
+- Branch/commit: `agent/patchcad-integration` Task 12
+- Attempt: Exercise the complete Magic Circle workflow, the actual Web Worker and pinned OpenCascade WASM, exact STEP export/import, imported-face hole cutting, typed provider plans, and the 390 × 844 workspace in Chromium.
+- Result: worked after five isolated RED/GREEN corrections
+- Evidence: The first Playwright run accidentally reused an unrelated app on port 3000; the configuration now owns a dedicated port 3217 and can target an explicit `PLAYWRIGHT_BASE_URL` for deployed smoke tests. A manually injected webpack worker entry then prevented Next development startup with `Entry cad-worker depends on main`; removing it let the existing `new Worker(new URL(...))` boundary emit and load the worker. Real WASM execution exposed one-solid compound boolean results, so exact bracket and session-hole results now unwrap only an exactly-one-solid shape and reject zero or multiple solids. The browser workflow reproduced preview mesh replacement clearing the Magic Circle selection; the workspace regression fix now preserves the selection and invalidates only a stale preview. A STEP round-trip then proved that a point inside a pre-existing hole could be paired with the top-face ID; exact point-to-face distance validation now rejects it as `POINT_NOT_ON_FACE`. Finally, the first clean workflow emitted repeated `PCFSoftShadowMap` deprecation warnings; basic shadow maps removed that warning flood. `PLAYWRIGHT_BASE_URL=http://127.0.0.1:3217 npm run test:e2e -- --reporter=line` passed all 5 tests in 10.4 seconds.
+- Carry-forward rule: Browser verification must use an owned server or an explicit external base URL, execute the emitted worker and real WASM, and assert exact STEP behavior rather than only UI mocks. A planar-face operation must verify that its requested point lies on that exact face. Treat browser warnings and page errors as test evidence, not harmless noise.

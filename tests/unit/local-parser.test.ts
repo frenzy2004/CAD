@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { createDemoBracket } from "@/lib/cad/demo-bracket";
 import { parseLocalPatch } from "@/lib/cad/local-parser";
+import { applyPatch, validatePlan } from "@/lib/cad/patch-engine";
 import type { SelectionEnvelope } from "@/lib/cad/schemas";
 
 const selectedHole: SelectionEnvelope = {
@@ -24,7 +26,7 @@ describe("honest offline PatchCAD command parser", () => {
       prompt: "make this hole 8 mm",
       selection: selectedHole,
       expectedPlan: {
-        version: 1,
+        version: 2,
         operation: "resize_hole",
         targetFeatureId: "hole:nw",
         diameterMm: 8,
@@ -35,7 +37,7 @@ describe("honest offline PatchCAD command parser", () => {
       prompt: "resize selected hole to 1/4 inch",
       selection: selectedHole,
       expectedPlan: {
-        version: 1,
+        version: 2,
         operation: "resize_hole",
         targetFeatureId: "hole:nw",
         diameterMm: 6.35,
@@ -46,10 +48,10 @@ describe("honest offline PatchCAD command parser", () => {
       prompt: "add a 5 mm hole here",
       selection: selectedTopFace,
       expectedPlan: {
-        version: 1,
+        version: 2,
         operation: "add_hole",
         targetFaceId: "face:top",
-        centerMm: { x: 50, y: 32 },
+        location: "selection",
         diameterMm: 5,
       },
     },
@@ -58,7 +60,7 @@ describe("honest offline PatchCAD command parser", () => {
       prompt: "  MAKE   THIS HOLE   8 MM  ",
       selection: selectedHole,
       expectedPlan: {
-        version: 1,
+        version: 2,
         operation: "resize_hole",
         targetFeatureId: "hole:nw",
         diameterMm: 8,
@@ -126,6 +128,36 @@ describe("honest offline PatchCAD command parser", () => {
     expect(parseLocalPatch(prompt, selection)).toEqual({
       source: "local-parser",
       error: { code },
+    });
+  });
+
+  it("keeps an offline add-hole plan bound to the picked point through apply", () => {
+    const selection: SelectionEnvelope = {
+      ...selectedTopFace,
+      pointMm: { x: 50.123456, y: 32.654321, z: 0 },
+    };
+    const parsed = parseLocalPatch("add a 5 mm hole here", selection);
+    if ("error" in parsed) {
+      throw new Error(`Expected a local plan, received ${parsed.error.code}.`);
+    }
+
+    const validation = validatePlan({
+      before: createDemoBracket(),
+      selection,
+      plan: parsed.plan,
+    });
+    const { after } = applyPatch({
+      before: createDemoBracket(),
+      selection,
+      plan: parsed.plan,
+    });
+
+    // Break caught: downstream validation must preserve the parser's selection-derived center.
+    expect(validation).toEqual({ valid: true, plan: parsed.plan });
+    expect(after.holes.at(-1)?.centerMm).toEqual({
+      x: 50.123456,
+      y: 32.654321,
+      z: 0,
     });
   });
 });

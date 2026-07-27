@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import {
   Download,
   FileJson,
@@ -14,10 +15,26 @@ import { VerificationStrip } from "@/components/workspace/VerificationStrip";
 import { usePatchWorkspace } from "@/hooks/usePatchWorkspace";
 import { createDemoBracket } from "@/lib/cad/demo-bracket";
 import type { BracketSnapshot } from "@/lib/cad/schemas";
+import {
+  EXA_PROVIDER_KEY_STORAGE_KEY,
+  OPENAI_PROVIDER_KEY_STORAGE_KEY,
+  type ProviderKeyName,
+} from "@/lib/provider-keys";
 
 import { PatchComposer } from "./PatchComposer";
 
 const DEFAULT_BRACKET = createDemoBracket();
+const EMPTY_PROVIDER_KEYS = { openai: "", exa: "" };
+type ProviderKeys = typeof EMPTY_PROVIDER_KEYS;
+
+function readProviderKeys(): ProviderKeys {
+  if (typeof window === "undefined") return EMPTY_PROVIDER_KEYS;
+  return {
+    openai:
+      window.sessionStorage.getItem(OPENAI_PROVIDER_KEY_STORAGE_KEY) ?? "",
+    exa: window.sessionStorage.getItem(EXA_PROVIDER_KEY_STORAGE_KEY) ?? "",
+  };
+}
 
 export interface PatchWorkspaceProps {
   initialSnapshot?: BracketSnapshot;
@@ -26,7 +43,34 @@ export interface PatchWorkspaceProps {
 export function PatchWorkspace({
   initialSnapshot = DEFAULT_BRACKET,
 }: PatchWorkspaceProps) {
-  const workspace = usePatchWorkspace(initialSnapshot);
+  const [providerKeys, setProviderKeys] =
+    useState<ProviderKeys>(EMPTY_PROVIDER_KEYS);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (active) setProviderKeys(readProviderKeys());
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const changeProviderKey = useCallback(
+    (provider: ProviderKeyName, value: string) => {
+      const storageKey =
+        provider === "openai"
+          ? OPENAI_PROVIDER_KEY_STORAGE_KEY
+          : EXA_PROVIDER_KEY_STORAGE_KEY;
+      const key = value.trim();
+      setProviderKeys((current) => ({ ...current, [provider]: key }));
+      if (key) {
+        window.sessionStorage.setItem(storageKey, key);
+      } else {
+        window.sessionStorage.removeItem(storageKey);
+      }
+    },
+    [],
+  );
+  const workspace = usePatchWorkspace(initialSnapshot, providerKeys);
   const kernelFailed =
     workspace.workerStatus === "error" || workspace.workerError !== null;
   const kernelReady =
@@ -157,7 +201,11 @@ export function PatchWorkspace({
           )}
         </section>
 
-        <PatchComposer workspace={workspace} />
+        <PatchComposer
+          providerKeys={providerKeys}
+          onProviderKeyChange={changeProviderKey}
+          workspace={workspace}
+        />
 
         <div className="xl:col-span-2">
           <VerificationStrip

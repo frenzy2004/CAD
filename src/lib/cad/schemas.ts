@@ -12,13 +12,6 @@ const HoleIdSchema = z.templateLiteral([
   z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/),
 ]);
 
-export const Point2MmSchema = z
-  .object({
-    x: FiniteNumberSchema,
-    y: FiniteNumberSchema,
-  })
-  .strict();
-
 export const Point3MmSchema = z
   .object({
     x: FiniteNumberSchema,
@@ -64,7 +57,7 @@ export const BracketSnapshotSchema = z
 export const PatchPlanSchema = z.discriminatedUnion("operation", [
   z
     .object({
-      version: z.literal(1),
+      version: z.literal(2),
       operation: z.literal("resize_hole"),
       targetFeatureId: HoleIdSchema,
       diameterMm: HoleDiameterSchema,
@@ -73,10 +66,10 @@ export const PatchPlanSchema = z.discriminatedUnion("operation", [
     .strict(),
   z
     .object({
-      version: z.literal(1),
+      version: z.literal(2),
       operation: z.literal("add_hole"),
       targetFaceId: z.literal("face:top"),
-      centerMm: Point2MmSchema,
+      location: z.literal("selection"),
       diameterMm: HoleDiameterSchema,
       rationale: z.string().trim().min(1).max(CONTRACT.maximumPromptCharacters),
     })
@@ -156,7 +149,6 @@ export const ResearchResponseSchema = z
   })
   .strict();
 
-export type Point2Mm = z.infer<typeof Point2MmSchema>;
 export type Point3Mm = z.infer<typeof Point3MmSchema>;
 export type Dimensions = z.infer<typeof DimensionsSchema>;
 export type HoleFeature = z.infer<typeof HoleFeatureSchema>;

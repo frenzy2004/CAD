@@ -19,9 +19,9 @@ review and never mutates geometry.
 5. Apply, reject, undo, or reset the sample.
 6. Export the verified exact STEP result and its JSON audit record.
 
-When `OPENAI_API_KEY` is not configured, the app falls back only for its small
-documented grammar and labels the plan `Offline grammar`. It does not pretend
-that an AI provider ran.
+When a session does not supply an OpenAI key, the app falls back only for its
+small documented grammar and labels the plan `Offline grammar`. It does not
+pretend that an AI provider ran.
 
 ## Supported MVP operations
 
@@ -65,17 +65,17 @@ copies the pinned OpenCascade WebAssembly file from
 `replicad-opencascadejs@0.23.0` to the ignored `public/cad-runtime/` directory.
 It never downloads or compiles a different CAD kernel.
 
-All provider settings are optional and server-only:
+The only non-secret provider setting is server-only:
 
 ```text
-OPENAI_API_KEY
 OPENAI_MODEL
-EXA_API_KEY
 ```
 
-Keep credentials in `.env.local` or encrypted deployment settings. Never put a
-key in browser code, a prompt, a URL, a tracked file, or a command-line
-argument. `OPENAI_MODEL` defaults to `gpt-5.6`.
+Do not put provider secrets in `.env.local` or Vercel settings. Users supply
+their own provider keys for a browser session; the server transits a key only
+for that request while creating the provider client. Never put a key in a
+prompt, URL, tracked file, or command-line argument. `OPENAI_MODEL` defaults to
+`gpt-5.6`.
 
 ## Verification
 
@@ -120,7 +120,12 @@ browser Web Worker + OpenCascade B-rep
         └── audit JSON
 ```
 
-- Provider credentials and SDK clients remain in server-only modules.
+- Provider keys are session-only; server-only route factories create SDK clients
+  for the individual request and retain no owner credential.
+- Provider routes use a bounded process-local concurrency/request guard and a
+  short function deadline. Client-address headers are only a best-effort
+  partition; the per-instance global concurrency bound is the control that does
+  not depend on those headers.
 - The browser Web Worker owns the authoritative B-rep; Three.js renders only
   tessellated display geometry.
 - The model cannot emit executable CAD code and cannot authorize its own target.
@@ -145,11 +150,19 @@ npx vercel@latest deploy --yes
 npx vercel@latest deploy --prod --yes
 ```
 
-Use Vercel's dashboard or interactive secret input to add `OPENAI_API_KEY` and
-`EXA_API_KEY` to Preview and Production. Add `OPENAI_MODEL=gpt-5.6` as a
-non-secret. The full offline CAD workflow remains usable when the two provider
-keys are absent; `/api/health` reports only configuration presence, never
-values.
+Do not add provider secrets to Vercel Preview or Production settings. Add
+`OPENAI_MODEL=gpt-5.6` only if you need a non-default model. Browser sessions
+provide provider keys, which the server transits for a single request; self-
+hosting offers the strongest isolation. The full offline CAD workflow remains
+usable without a provider key, and `/api/health` reports static BYOK support.
+
+The built-in limiter is in-memory and per process. It does not coordinate
+across multiple functions, regions, or deployment instances, so public
+multi-instance traffic still carries residual hosting-cost and denial-of-service
+risk even though provider API calls use browser-supplied keys. Configure a
+deployment edge/WAF rate limit in front of `/api/plan` and `/api/research` for
+production public traffic; do not describe the process-local guard as a
+distributed edge firewall.
 
 ## Credits and status
 

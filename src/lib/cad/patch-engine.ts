@@ -21,6 +21,10 @@ export type VerificationViolationCode =
   | "INVALID_SOLID";
 
 export type ValidationResult =
+  | { valid: true; plan: PatchPlan }
+  | { valid: false; code: PatchRejectionCode };
+
+type CandidateValidationResult =
   | { valid: true }
   | { valid: false; code: PatchRejectionCode };
 
@@ -73,25 +77,34 @@ export function validatePlan(input: {
       return { valid: false, code: "NO_EFFECT" };
     }
 
-    return validateCandidate(
+    const candidateValidation = validateCandidate(
       before,
       { ...target, diameterMm: plan.diameterMm },
       target.id,
     );
+    return candidateValidation.valid
+      ? { valid: true, plan }
+      : candidateValidation;
   }
 
   if (plan.operation === "add_hole") {
-    if (!selection.editableFaceIds.includes(plan.targetFaceId)) {
+    if (
+      !selection.editableFaceIds.includes(plan.targetFaceId) ||
+      !selection.pointMm
+    ) {
       return { valid: false, code: "TARGET_OUTSIDE_SELECTION" };
     }
 
-    return validateCandidate(before, {
+    const candidateValidation = validateCandidate(before, {
       id: nextAddedHoleId(before),
       kind: "through_hole",
-      centerMm: { ...plan.centerMm, z: 0 },
+      centerMm: { ...selection.pointMm },
       diameterMm: plan.diameterMm,
       axis: { x: 0, y: 0, z: 1 },
     });
+    return candidateValidation.valid
+      ? { valid: true, plan }
+      : candidateValidation;
   }
 
   return { valid: false, code: "UNSUPPORTED_OPERATION" };
@@ -107,7 +120,8 @@ export function applyPatch(input: {
     throw new PatchValidationError(validation.code);
   }
 
-  const { before, selection, plan } = input;
+  const { before, selection } = input;
+  const { plan } = validation;
   const after =
     plan.operation === "resize_hole"
       ? {
@@ -125,7 +139,7 @@ export function applyPatch(input: {
             {
               id: nextAddedHoleId(before),
               kind: "through_hole" as const,
-              centerMm: { ...plan.centerMm, z: 0 },
+              centerMm: { ...selection.pointMm! },
               diameterMm: plan.diameterMm,
               axis: { x: 0 as const, y: 0 as const, z: 1 as const },
             },
@@ -205,7 +219,7 @@ function validateCandidate(
   snapshot: BracketSnapshot,
   candidate: HoleFeature,
   excludedHoleId?: string,
-): ValidationResult {
+): CandidateValidationResult {
   if (minimumEdgeWall(snapshot, candidate) < CONTRACT.minimumWallMm) {
     return { valid: false, code: "MINIMUM_WALL_VIOLATION" };
   }

@@ -13,6 +13,7 @@ const topFaceSelection: SelectionEnvelope = {
   units: "mm",
   editableFeatureIds: [],
   editableFaceIds: ["face:top"],
+  pointMm: { x: 50, y: 32, z: 0 },
 };
 
 function snapshotWithHoleOrder(
@@ -47,7 +48,7 @@ describe("deterministic PatchCAD patch engine", () => {
       "hole:sw",
     ]);
     const plan: PatchPlan = {
-      version: 1,
+      version: 2,
       operation: "resize_hole",
       targetFeatureId: "hole:nw",
       diameterMm: 8,
@@ -79,7 +80,7 @@ describe("deterministic PatchCAD patch engine", () => {
       before: createDemoBracket(),
       selection: { ...topFaceSelection, editableFeatureIds: ["hole:nw"] },
       plan: {
-        version: 1,
+        version: 2,
         operation: "resize_hole" as const,
         targetFeatureId: "hole:nw",
         diameterMm: 6,
@@ -94,10 +95,10 @@ describe("deterministic PatchCAD patch engine", () => {
   it("adds a deterministic new hole when only the top face is selected", () => {
     const before = createDemoBracket();
     const plan: PatchPlan = {
-      version: 1,
+      version: 2,
       operation: "add_hole",
       targetFaceId: "face:top",
-      centerMm: { x: 50, y: 32 },
+      location: "selection",
       diameterMm: 5,
       rationale: "Add a centered mount.",
     };
@@ -115,12 +116,64 @@ describe("deterministic PatchCAD patch engine", () => {
     expect(report).toMatchObject({ targetChanged: true, protectedFeaturesUnchanged: true });
   });
 
+  it("rejects an add-hole plan when the selected face has no picked point", () => {
+    const input = {
+      before: createDemoBracket(),
+      selection: { ...topFaceSelection, pointMm: undefined },
+      plan: {
+        version: 2,
+        operation: "add_hole" as const,
+        targetFaceId: "face:top" as const,
+        location: "selection" as const,
+        diameterMm: 5,
+        rationale: "Add a centered mount.",
+      },
+    };
+
+    // Break caught: authorizing an entire face when the user picked no point.
+    expect(validatePlan(input)).toEqual({
+      valid: false,
+      code: "TARGET_OUTSIDE_SELECTION",
+    });
+    expect(() => applyPatch(input)).toThrowError("TARGET_OUTSIDE_SELECTION");
+  });
+
+  it("uses the exact picked point as the only add-hole center", () => {
+    const plan: PatchPlan = {
+      version: 2,
+      operation: "add_hole",
+      targetFaceId: "face:top",
+      location: "selection",
+      diameterMm: 5,
+      rationale: "Add the mount at the picked point.",
+    };
+    const selection: SelectionEnvelope = {
+      ...topFaceSelection,
+      pointMm: { x: 50.123456, y: 31.99997, z: 0.25 },
+    };
+
+    const validation = validatePlan({
+      before: createDemoBracket(),
+      selection,
+      plan,
+    });
+    const { after } = applyPatch({
+      before: createDemoBracket(),
+      selection,
+      plan,
+    });
+
+    // Break caught: add-hole geometry must be derived only from the selected CAD point.
+    expect(validation).toEqual({ valid: true, plan });
+    expect(after.holes.at(-1)?.centerMm).toEqual(selection.pointMm);
+  });
+
   it("rejects a resize target outside the semantic selection envelope", () => {
     const result = validatePlan({
       before: createDemoBracket(),
       selection: { ...topFaceSelection, editableFeatureIds: ["hole:ne"] },
       plan: {
-        version: 1,
+        version: 2,
         operation: "resize_hole",
         targetFeatureId: "hole:nw",
         diameterMm: 8,
@@ -134,12 +187,15 @@ describe("deterministic PatchCAD patch engine", () => {
   it("rejects a new hole when its edge wall is below 2 mm", () => {
     const result = validatePlan({
       before: createDemoBracket(),
-      selection: topFaceSelection,
+      selection: {
+        ...topFaceSelection,
+        pointMm: { x: 3.9, y: 32, z: 0 },
+      },
       plan: {
-        version: 1,
+        version: 2,
         operation: "add_hole",
         targetFaceId: "face:top",
-        centerMm: { x: 3.9, y: 32 },
+        location: "selection",
         diameterMm: 4,
         rationale: "Add a close edge hole.",
       },
@@ -153,7 +209,7 @@ describe("deterministic PatchCAD patch engine", () => {
       before: createDemoBracket(),
       selection: { ...topFaceSelection, editableFeatureIds: ["hole:nw"] },
       plan: {
-        version: 1,
+        version: 2,
         operation: "resize_hole",
         targetFeatureId: "hole:nw",
         diameterMm: 22,
@@ -167,12 +223,15 @@ describe("deterministic PatchCAD patch engine", () => {
   it("rejects a new hole that intersects an existing hole", () => {
     const result = validatePlan({
       before: createDemoBracket(),
-      selection: topFaceSelection,
+      selection: {
+        ...topFaceSelection,
+        pointMm: { x: 18, y: 52, z: 0 },
+      },
       plan: {
-        version: 1,
+        version: 2,
         operation: "add_hole",
         targetFaceId: "face:top",
-        centerMm: { x: 18, y: 52 },
+        location: "selection",
         diameterMm: 8,
         rationale: "Add a neighboring mount.",
       },
@@ -261,12 +320,14 @@ describe("deterministic PatchCAD patch engine", () => {
       ),
     };
 
-    expect(verifyLocality(before, withinTolerance, ["hole:nw"]).protectedFeaturesUnchanged).toBe(
-      true,
-    );
-    expect(verifyLocality(before, outsideTolerance, ["hole:nw"]).protectedFeaturesUnchanged).toBe(
-      false,
-    );
+    expect(
+      verifyLocality(before, withinTolerance, ["hole:nw"])
+        .protectedFeaturesUnchanged,
+    ).toBe(true);
+    expect(
+      verifyLocality(before, outsideTolerance, ["hole:nw"])
+        .protectedFeaturesUnchanged,
+    ).toBe(false);
   });
 
   it("uses semantic IDs to produce deterministic fingerprints independent of hole order", () => {
@@ -295,7 +356,7 @@ describe("deterministic PatchCAD patch engine", () => {
       before,
       selection: { ...topFaceSelection, editableFeatureIds: ["hole:nw"] },
       plan: {
-        version: 1,
+        version: 2,
         operation: "resize_hole",
         targetFeatureId: "hole:nw",
         diameterMm: 8,
@@ -310,7 +371,7 @@ describe("deterministic PatchCAD patch engine", () => {
 
   it("rejects unsupported operations with a structured code", () => {
     const unsupportedPlan = {
-      version: 1,
+      version: 2,
       operation: "move_hole",
       targetFeatureId: "hole:nw",
       rationale: "Move the hole.",

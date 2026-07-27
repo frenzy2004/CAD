@@ -280,7 +280,7 @@ export function Scene({
       fallback={<ViewportFallback />}
       gl={GL_OPTIONS}
       onCreated={configureZUpCamera}
-      shadows
+      shadows="basic"
     >
       <color attach="background" args={["#0b1220"]} />
       <ambientLight intensity={0.72} />

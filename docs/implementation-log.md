@@ -137,6 +137,56 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 - Result: partial
 - Evidence: Standard Python compilation, XML parsing, and import-isolation checks passed; importing `protocol`, `audit`, and `bridge` loaded none of `FreeCAD`, `FreeCADGui`, or `Part`. `command -v` found no `FreeCADCmd`, `freecadcmd`, `FreeCAD`, or `freecad` executable, matching the earlier planning discovery.
 - Carry-forward rule: Treat add/enlarge cuts and shrink annulus fuse/recut geometry, face-orientation recognition, FeaturePython recompute, GUI registration, and transaction undo as installation-dependent manual verification until run under FreeCAD 1.1. Never report the FreeCAD geometry/GUI smoke tests as run in this environment.
+
+### 2026-07-28 — Native FreeCADCmd document smoke and headless safeguards
+
+- Branch/commit: `agent/patchcad-freecad` before the native-smoke commit
+- Attempt: Verify PatchCAD against an official FreeCAD 1.1.3 macOS arm64
+  application bundle without installing it globally, then exercise a real
+  Part document's create, diameter-update, enable/disable, undo, and redo
+  paths through `FreeCADCmd`.
+- Result: worked for native headless document behavior; GUI smoke remains
+  pending desktop-control permission
+- Evidence: The official release disk image checksum matched before it was
+  mounted read-only in a temporary directory. The first native run exposed a
+  real headless difference: source features have a present-but-`None`
+  `ViewObject`, so the old visibility assignment raised before commit. A
+  nullable view-provider guard made the new pure regression GREEN. FreeCADCmd
+  also starts with `UndoMode == 0`; production mutations now refuse before any
+  transaction when Undo is disabled, while the isolated native fixture enables
+  undo deliberately. `npm run test:freecad` passed 69 tests, and the native
+  runner printed `NATIVE_SMOKE_OK` after exercising real OCCT geometry. Its
+  marker guard also rejects FreeCADCmd's misleading zero exit after a script
+  exception. A macOS GUI-control retry still could not obtain a controllable
+  FreeCAD window, so workbench discovery, selection UI, browser-to-Qt bridge,
+  and audit behavior were not claimed as verified.
+- Carry-forward rule: Keep headless FreeCADCmd support explicit, fail closed
+  when reversible Undo is disabled, and require an unambiguous native success
+  marker. Do not claim GUI verification until the installed workbench can be
+  driven with macOS Accessibility and Screen Recording permission.
+
+### 2026-07-28 — Native smoke review closure
+
+- Branch/commit: agent/patchcad-freecad before the native-smoke commit
+- Attempt: Independently review the native smoke proof after it first passed,
+  then correct every gap before treating its result as evidence.
+- Result: worked
+- Evidence: Review found that the original success marker appeared before
+  document cleanup, its shell guard missed lowercase "Unknown exception while
+  processing file", and its undo assertion could be satisfied without proving
+  create or toggle reversibility. The runner is now a portable Node command
+  with a case-insensitive exception guard and exactly one success marker;
+  native_smoke closes the document before emitting that marker and reports
+  FREECAD_VERSION=1.1.3. Source setup is removed from undo history, then the
+  smoke proves exact undo/redo transitions for create, diameter update, disable,
+  and enable. The runner unit suite passed 2/2, a zero-exit fake command without
+  a marker failed closed, the FreeCAD-independent suite passed 69/69, and the
+  real FreeCADCmd run printed FREECAD_VERSION=1.1.3 and NATIVE_SMOKE_OK.
+- Carry-forward rule: A native smoke result must prove the reversible action it
+  claims, place its success signal after cleanup, and reject a runtime's
+  diagnostic even if that runtime returns zero. Keep GUI workbench, selection,
+  Qt bridge, and audit checks separate until desktop automation is available.
+
 ## Web/BYOK workstream
 
 ### 2026-07-28 00:09 +08 — Production dependency audit closure

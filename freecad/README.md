@@ -140,6 +140,38 @@ PYTHONPATH="$PWD/freecad/PatchCAD" python3 -m unittest \
 The bridge tests bind an ephemeral `127.0.0.1` socket. A restricted test runner
 must permit loopback binds.
 
+### Native document smoke
+
+The headless smoke creates a real Part box and exercises PatchCAD's create,
+diameter-update, enable/disable, and undo/redo paths against FreeCAD's document
+and OCCT geometry. It proves each PatchCAD action owns exactly one undo step,
+including object creation and both toggle directions. It explicitly enables
+document undo for FreeCADCmd, which otherwise starts with undo disabled. It
+must run under `FreeCADCmd` (not the system Python):
+
+```bash
+FREECAD_CMD=FreeCADCmd npm run test:freecad:native
+```
+
+On macOS's app bundle, point the command at the bundled console executable and
+provide its resource root:
+
+```bash
+FREECAD_ROOT="/Applications/FreeCAD.app/Contents/Resources"
+PREFIX="$FREECAD_ROOT" \
+PYTHONHOME="$FREECAD_ROOT" \
+PYTHONPATH="$FREECAD_ROOT" \
+LD_LIBRARY_PATH="$FREECAD_ROOT/lib" \
+FREECAD_CMD="$FREECAD_ROOT/bin/freecadcmd" \
+npm run test:freecad:native
+```
+
+The command requires one `NATIVE_SMOKE_OK` marker, reports its exact FreeCAD
+version, and fails if FreeCAD reports an exception even when that executable
+returns a zero status. The marker is emitted only after the temporary document
+has closed. It intentionally does not run in the default `npm run verify`
+command, because CI and browser deployments do not bundle FreeCAD.
+
 Before distributing the add-on, run these installation-dependent checks under
 the exact FreeCAD release you support:
 
@@ -151,6 +183,6 @@ the exact FreeCAD release you support:
 - saved and unsaved document audit behavior;
 - browser preflight and real Qt-timer dispatch.
 
-Those geometry and GUI checks were not run in the original build environment
-because no FreeCAD executable was installed. The repository does not claim
-otherwise.
+The native smoke was run against FreeCAD 1.1.3 on macOS for creation, diameter
+updates, enable/disable geometry, and undo/redo. Workbench discovery, selection
+UI, bridge dispatch, and audit behavior still need the installed GUI smoke.

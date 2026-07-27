@@ -146,6 +146,11 @@ def _abort_and_recompute(document: object, transaction_open: bool) -> None:
         pass
 
 
+def _require_undo(document: object) -> None:
+    if getattr(document, "UndoMode", 1) == 0:
+        raise PatchServiceError("PatchCAD requires FreeCAD Undo to be enabled")
+
+
 class PatchService:
     def dispatch(self, action: str, payload: object) -> object:
         if action == "selection":
@@ -177,6 +182,7 @@ class PatchService:
         if existing is not None:
             return _persisted_replay(existing, request_fingerprint)
 
+        _require_undo(document)
         patch_id = str(uuid.uuid4())
         audit_id = str(uuid.uuid4())
         patch = None
@@ -196,8 +202,9 @@ class PatchService:
                 audit_id=audit_id,
             )
             _recompute_fresh(document, patch, 0)
-            if hasattr(target.source, "ViewObject"):
-                target.source.ViewObject.Visibility = False
+            view_object = getattr(target.source, "ViewObject", None)
+            if view_object is not None:
+                view_object.Visibility = False
             document.commitTransaction()
             transaction_open = False
         except Exception:
@@ -268,6 +275,7 @@ class PatchService:
         audit_fields: dict[str, object],
     ) -> dict[str, object]:
         document = patch.Document  # type: ignore[attr-defined]
+        _require_undo(document)
         previous_serial = _execution_serial(patch)
         transaction_open = False
         try:

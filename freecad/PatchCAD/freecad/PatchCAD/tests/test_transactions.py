@@ -241,6 +241,133 @@ class MutationRecomputeTests(unittest.TestCase):
         self.assertEqual(patch.Document.aborts, 0)
 
 
+class HeadlessCreatePatchTests(unittest.TestCase):
+    def test_create_patch_commits_when_console_source_has_no_view_provider(self):
+        """FreeCADCmd exposes a present-but-None ViewObject on source features."""
+
+        class Document:
+            Name = "Headless"
+            FileName = ""
+
+            def __init__(self):
+                self.Objects = []
+                self.commits = 0
+                self.aborts = 0
+
+            def openTransaction(self, _label):
+                return None
+
+            def addObject(self, _kind, _name):
+                patch = SimpleNamespace(Document=self, Name="PatchCADPatch")
+                self.Objects.append(patch)
+                return patch
+
+            def commitTransaction(self):
+                self.commits += 1
+
+            def abortTransaction(self):
+                self.aborts += 1
+
+        document = Document()
+        source = SimpleNamespace(Document=document, ViewObject=None)
+        target = SimpleNamespace(
+            source=source,
+            document=document.Name,
+            object_name="Source",
+            subelement="Face6",
+            operation="add_hole",
+        )
+        request = PatchRequest(
+            request_id="headless-create",
+            document=document.Name,
+            object_name="Source",
+            subelement="Face6",
+            operation="add_hole",
+            diameter_mm=10.0,
+            point=(20.0, 20.0, 10.0),
+        )
+
+        def attach(patch, _target, **fields):
+            patch.PatchId = fields["patch_id"]
+            patch.RequestId = fields["request_id"]
+            patch.RequestFingerprint = fields["request_fingerprint"]
+            patch.AuditId = fields["audit_id"]
+            patch.Operation = "add_hole"
+            patch.Diameter = fields["diameter_mm"]
+            patch.Enabled = True
+
+        app = SimpleNamespace(
+            ActiveDocument=document,
+            listDocuments=lambda: {document.Name: document},
+        )
+        with (
+            mock.patch.object(service, "_app", return_value=app),
+            mock.patch.object(service, "attach_patch_feature", side_effect=attach),
+            mock.patch.object(service, "_recompute_fresh"),
+        ):
+            result = PatchService().create_patch(request, target)
+
+        self.assertEqual(result["operation"], "add_hole")
+        self.assertEqual(document.commits, 1)
+        self.assertEqual(document.aborts, 0)
+
+
+class UndoRequiredTests(unittest.TestCase):
+    def test_create_patch_refuses_to_mutate_when_freecad_undo_is_disabled(self):
+        class Document:
+            Name = "NoUndo"
+            FileName = ""
+            UndoMode = 0
+
+            def __init__(self):
+                self.Objects = []
+
+            def openTransaction(self, _label):
+                raise AssertionError("create_patch must check undo before mutation")
+
+        document = Document()
+        request = PatchRequest(
+            request_id="no-undo-create",
+            document=document.Name,
+            object_name="Source",
+            subelement="Face6",
+            operation="add_hole",
+            diameter_mm=10.0,
+            point=(20.0, 20.0, 10.0),
+        )
+        target = SimpleNamespace(
+            source=SimpleNamespace(Document=document),
+            document=document.Name,
+            object_name="Source",
+            subelement="Face6",
+            operation="add_hole",
+        )
+        app = SimpleNamespace(
+            ActiveDocument=document,
+            listDocuments=lambda: {document.Name: document},
+        )
+
+        with mock.patch.object(service, "_app", return_value=app):
+            with self.assertRaisesRegex(PatchServiceError, "requires FreeCAD Undo"):
+                PatchService().create_patch(request, target)
+
+    def test_update_refuses_to_mutate_when_freecad_undo_is_disabled(self):
+        patch = PatchObject()
+        patch.Document.UndoMode = 0
+        app = SimpleNamespace(ActiveDocument=patch.Document)
+
+        with (
+            mock.patch.object(service, "_app", return_value=app),
+            mock.patch.object(service, "_recompute_fresh"),
+            self.assertRaisesRegex(PatchServiceError, "requires FreeCAD Undo"),
+        ):
+            PatchService().update_diameter(patch.PatchId, 12.0)
+
+        self.assertEqual(patch.Diameter, 6.0)
+        self.assertEqual(patch.Document.commits, 0)
+        self.assertEqual(patch.Document.aborts, 0)
+
+
 class PersistedIdempotencyTests(unittest.TestCase):
     @staticmethod
     def fingerprint(request):

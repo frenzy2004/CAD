@@ -1,14 +1,18 @@
 import "server-only";
 
-import { getOpenAIConfiguration } from "@/lib/env";
+import { getOpenAIModel } from "@/lib/env";
 import { createOpenAIModelAdapter } from "@/server/openai/client";
 import { createPlanRoute } from "@/server/openai/plan-route";
 import { PlanService } from "@/server/openai/plan-service";
 
-const configuration = getOpenAIConfiguration();
-const defaultService = new PlanService({
-  configuration,
-  adapter: configuration ? createOpenAIModelAdapter(configuration) : undefined,
-});
+const model = getOpenAIModel();
 
-export const POST = createPlanRoute(defaultService);
+export const maxDuration = 15;
+
+export const POST = createPlanRoute((apiKey) => {
+  const configuration = { apiKey, model };
+  return new PlanService({
+    configuration,
+    adapter: createOpenAIModelAdapter(configuration),
+  });
+});

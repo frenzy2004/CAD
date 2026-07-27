@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import bracketContext from "../fixtures/bracket-context.json";
+import { OPENAI_PROVIDER_KEY_HEADER } from "@/lib/provider-keys";
 import { createPlanRoute } from "@/server/openai/plan-route";
 import { PlanService, type OpenAIModelAdapter } from "@/server/openai/plan-service";
+
+const providerKey = "synthetic-openai-provider-key";
 
 const requestBody = {
   prompt: "Increase the selected hole to 8 mm.",
@@ -15,7 +18,7 @@ const requestBody = {
 };
 
 const validPlan = {
-  version: 1,
+  version: 2,
   operation: "resize_hole",
   targetFeatureId: "hole:nw",
   diameterMm: 8,
@@ -29,22 +32,168 @@ const expectedValidPlan = {
 
 function createHandler(adapter?: OpenAIModelAdapter) {
   return createPlanRoute(
-    new PlanService({
-      configuration: adapter ? { apiKey: "provider-test-key", model: "test-model" } : undefined,
-      adapter,
-    }),
+    (apiKey) =>
+      new PlanService({
+        configuration: adapter ? { apiKey, model: "test-model" } : undefined,
+        adapter,
+      }),
   );
 }
 
 function post(body: unknown) {
   return new Request("http://localhost/api/plan", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      [OPENAI_PROVIDER_KEY_HEADER]: providerKey,
+    },
     body: JSON.stringify(body),
   });
 }
 
 describe("POST /api/plan", () => {
+  it("returns the exact throttle envelope without constructing a provider service", async () => {
+    let factoryCalls = 0;
+    let adapterCalls = 0;
+    const handler = createPlanRoute(
+      () => {
+        factoryCalls += 1;
+        return new PlanService({
+          configuration: { apiKey: providerKey, model: "test-model" },
+          adapter: {
+            parse: async () => {
+              adapterCalls += 1;
+              return { parsed: validPlan };
+            },
+          },
+        });
+      },
+      { acquire: () => null },
+    );
+
+    const response = await handler(post(requestBody));
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({
+      error: { code: "PROVIDER_THROTTLED" },
+    });
+    expect(factoryCalls).toBe(0);
+    expect(adapterCalls).toBe(0);
+  });
+
+  it("releases an acquired provider lease after completion", async () => {
+    let inFlight = false;
+    let releaseCalls = 0;
+    let finishFirst!: () => void;
+    const firstProviderCall = new Promise<void>((resolve) => {
+      finishFirst = resolve;
+    });
+    let providerCalls = 0;
+    const handler = createPlanRoute(
+      () =>
+        new PlanService({
+          configuration: { apiKey: providerKey, model: "test-model" },
+          adapter: {
+            parse: async () => {
+              providerCalls += 1;
+              if (providerCalls === 1) await firstProviderCall;
+              return { parsed: validPlan };
+            },
+          },
+        }),
+      {
+        acquire: () => {
+          if (inFlight) return null;
+          inFlight = true;
+          return {
+            release: () => {
+              inFlight = false;
+              releaseCalls += 1;
+            },
+          };
+        },
+      },
+    );
+
+    const firstResponsePromise = handler(post(requestBody));
+    await vi.waitFor(() => expect(providerCalls).toBe(1));
+
+    const throttledResponse = await handler(post(requestBody));
+    expect(throttledResponse.status).toBe(429);
+
+    finishFirst();
+    const firstResponse = await firstResponsePromise;
+    expect(firstResponse.status).toBe(200);
+    expect(releaseCalls).toBe(1);
+
+    const subsequentResponse = await handler(post(requestBody));
+    expect(subsequentResponse.status).toBe(200);
+    expect(providerCalls).toBe(2);
+    expect(releaseCalls).toBe(2);
+  });
+
+  it("rejects a missing provider key before reading the stream, invoking the factory, or adapter", async () => {
+    let bodyRead = false;
+    let factoryCalls = 0;
+    let adapterCalls = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          bodyRead = true;
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(requestBody)));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const request = new Request("http://localhost/api/plan", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const handler = createPlanRoute(() => {
+      factoryCalls += 1;
+      return new PlanService({
+        configuration: { apiKey: "synthetic-openai-provider-key", model: "test-model" },
+        adapter: {
+          parse: async () => {
+            adapterCalls += 1;
+            return { parsed: validPlan };
+          },
+        },
+      });
+    });
+
+    const response = await handler(request);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: { code: "PROVIDER_KEY_REQUIRED" },
+    });
+    expect(bodyRead).toBe(false);
+    expect(factoryCalls).toBe(0);
+    expect(adapterCalls).toBe(0);
+  });
+
+  it("passes the trimmed synthetic provider key to the service factory", async () => {
+    let receivedKey: string | undefined;
+    const handler = createPlanRoute((apiKey) => {
+      receivedKey = apiKey;
+      return new PlanService({
+        configuration: { apiKey, model: "test-model" },
+        adapter: { parse: async () => ({ parsed: validPlan }) },
+      });
+    });
+    const request = post(requestBody);
+    request.headers.set(OPENAI_PROVIDER_KEY_HEADER, "  synthetic-openai-provider-key  ");
+
+    const response = await handler(request);
+
+    expect(response.status).toBe(200);
+    expect(receivedKey).toBe("synthetic-openai-provider-key");
+  });
+
   it("returns a provider plan only after deterministic validation accepts it", async () => {
     const handler = createHandler({ parse: async () => ({ parsed: validPlan }) });
 
@@ -77,14 +226,14 @@ describe("POST /api/plan", () => {
         },
       },
       providerPlan: {
-        version: 1,
+        version: 2,
         operation: "add_hole",
         targetFaceId: "face:top",
-        centerMm: { x: 50, y: 32 },
+        location: "selection",
         diameterMm: 5,
         rationale: "import cadquery as cq; cq.Workplane().hole(5)",
       },
-      expectedRationale: "Add a 5 mm hole on face:top at (50, 32) mm.",
+      expectedRationale: "Add a 5 mm hole at the selected point on face:top.",
     },
   ])("replaces executable model prose in a $name with a controlled summary", async ({
     request,
@@ -131,6 +280,93 @@ describe("POST /api/plan", () => {
     expect(await response.json()).toEqual({ error: { code: expectedCode } });
   });
 
+  it("rejects an add-hole provider plan when the face selection has no picked point", async () => {
+    const request = {
+      ...requestBody,
+      prompt: "Add a 5 mm hole at the selected point.",
+      selection: {
+        units: "mm",
+        editableFeatureIds: [],
+        editableFaceIds: ["face:top"],
+      },
+    };
+    const providerPlan = {
+      version: 2,
+      operation: "add_hole",
+      targetFaceId: "face:top",
+      location: "selection",
+      diameterMm: 5,
+      rationale: "Add a centered mount.",
+    };
+    const handler = createHandler({ parse: async () => ({ parsed: providerPlan }) });
+
+    const response = await handler(post(request));
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: { code: "AI_UNSAFE_PLAN" } });
+  });
+
+  it("rejects provider coordinates before add-hole geometry validation", async () => {
+    const request = {
+      ...requestBody,
+      prompt: "Add a 5 mm hole at the selected point.",
+      selection: {
+        units: "mm",
+        editableFeatureIds: [],
+        editableFaceIds: ["face:top"],
+        pointMm: { x: 50, y: 32, z: 0 },
+      },
+    };
+    const providerPlan = {
+      version: 2,
+      operation: "add_hole",
+      targetFaceId: "face:top",
+      location: "selection",
+      centerMm: { x: 2 ** 39, y: 2 ** 39 },
+      diameterMm: 5,
+      rationale: "Shift the mount.",
+    };
+    const handler = createHandler({ parse: async () => ({ parsed: providerPlan }) });
+
+    const response = await handler(post(request));
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ error: { code: "AI_INVALID_RESPONSE" } });
+  });
+
+  it("returns a coordinate-free add-hole plan for the exact picked point", async () => {
+    const request = {
+      ...requestBody,
+      prompt: "Add a 5 mm hole at the selected point.",
+      selection: {
+        units: "mm",
+        editableFeatureIds: [],
+        editableFaceIds: ["face:top"],
+        pointMm: { x: 50.123456, y: 32.654321, z: 0 },
+      },
+    };
+    const providerPlan = {
+      version: 2,
+      operation: "add_hole",
+      targetFaceId: "face:top",
+      location: "selection",
+      diameterMm: 5,
+      rationale: "Add the requested mount.",
+    };
+    const handler = createHandler({ parse: async () => ({ parsed: providerPlan }) });
+
+    const response = await handler(post(request));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      source: "openai",
+      plan: {
+        ...providerPlan,
+        rationale: "Add a 5 mm hole at the selected point on face:top.",
+      },
+    });
+  });
+
   it("returns AI_NOT_CONFIGURED without serializing a provider secret", async () => {
     const handler = createHandler();
 
@@ -143,7 +379,14 @@ describe("POST /api/plan", () => {
   });
 
   it.each([
-    ["malformed JSON", new Request("http://localhost/api/plan", { method: "POST", body: "{" })],
+    [
+      "malformed JSON",
+      new Request("http://localhost/api/plan", {
+        method: "POST",
+        headers: { [OPENAI_PROVIDER_KEY_HEADER]: providerKey },
+        body: "{",
+      }),
+    ],
     ["an oversized prompt", post({ ...requestBody, prompt: "x".repeat(501) })],
   ])("rejects %s requests with a public bad-request envelope", async (_name, request) => {
     const response = await createHandler({ parse: async () => ({ parsed: validPlan }) })(request);

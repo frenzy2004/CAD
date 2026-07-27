@@ -17,6 +17,14 @@ This is the shared memory for implementation branches. Add an entry whenever an 
 
 ## FreeCAD workstream
 
+### 2026-07-27 09:35 +08 — Native FreeCAD 1.1 runtime acquisition
+
+- Branch/commit: `agent/patchcad-freecad` after `12476b7`
+- Attempt: Acquire the official Homebrew FreeCAD 1.1.1 cask into a workspace-local app directory so the real stepped-pilot and persisted-id smoke cases could run against native FreeCAD/OCCT APIs.
+- Result: blocked by managed-machine permissions
+- Evidence: Homebrew identifies the cask as `freecad 1.1.1`, but installation cannot update the Homebrew API cache or write the shared Homebrew prefix, cache, or logs. The command exited 1 before downloading or installing any artifact. A public GitHub release metadata query was also denied by this environment's terminal network policy. No ownership change, sudo operation, or global package modification was attempted.
+- Carry-forward rule: Do not repair shared Homebrew ownership or bypass the managed terminal network policy. Keep the bridge branch unmerged until an environment with FreeCAD 1.1 can run the native headless geometry, duplicate-id, recompute, undo, and GUI smoke checks.
+
 ### 2026-07-27 09:20 +08 — Post-review through-hole and persisted-replay closure
 
 - Branch/commit: `agent/patchcad-freecad` after `363748b`, before the follow-up commit
